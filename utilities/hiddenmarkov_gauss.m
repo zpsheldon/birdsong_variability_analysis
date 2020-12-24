@@ -1,0 +1,170 @@
+function [A,mu,sigma,gamma,Pi,logp,iter,logpvc] = hiddenmarkov_gauss(X,k,zeroinds,A0,Pi0,mu0,sigma0,convflg)
+
+[n,d] = size(X);
+C = cov(X);
+piconst = (2*pi)^(d/2);
+
+
+if nargin < 3
+    zeroinds = [];
+end
+
+if nargin < 7
+    if ~isempty(zeroinds)
+        A0 = rand(k);
+        A0(1,1) = 0;
+        A0 = A0 ./ repmat(sum(A0')',1,k);
+        ptmp = sum(A0) / sum(A0(:));
+        
+        mu0 = repmat(mean(X),k,1) .* rand(k,d) * 2;
+        mu0(1,:) = zeros(1,d);
+        
+        sigma0 = repmat(diag(diag(C)),[1,1,k]) .* rand(d,d,k);
+        sigma0(:,:,1) = .01*eye(d);
+        
+    else
+        A0 = rand(k);
+        A0 = A0 ./ repmat(sum(A0,2),1,k);
+        
+        ptmp = sum(A0) / sum(A0(:));
+        
+        mu0 = repmat(mean(X),k,1) .* ((1/3) + (4/3)*rand(k,d));
+        mu0 = repmat(mean(X),k,1) .* mu0 ./ repmat((ptmp*mu0),k,1);
+        
+        dmu = mu0 - repmat(mean(X),k,1);
+        sigmamu = sum(repmat(ptmp',1,d).*dmu.*dmu);
+        
+        minvar = diag(diag(diag(C)/(k^2)));
+        
+        sigma0 = repmat(diag(max(minvar,diag(C)-sigmamu')),[1,1,k]);
+    end
+    
+    if ~isempty(zeroinds)
+        Pi0 = [1 zeros(1,k-1)];
+    else
+        Pi0 = zeros(1,k);
+        piconst = (2*pi)^(d/2);
+        for kind = 1:k
+            Xsub = X(1,:) - mu0(kind,:);
+            Pi0(kind) = exp(-.5*diag(Xsub* inv(sigma0(:,:,kind))*Xsub')) / (sqrt(det((sigma0(:,:,kind)))) * piconst);
+        end
+        
+        Pi0 = Pi0 / sum(Pi0);
+    end
+    
+    
+    Pi0 = Pi0 / sum(Pi0);
+end
+
+A = A0;
+mu = mu0;
+sigma = sigma0;
+Pi = Pi0;
+
+if nargin < 8
+    convflg = 0;
+end
+
+maxiter = 10000;
+iter = 1;
+conv = 0;
+logp = 0;
+
+logpvc = zeros(maxiter,1);
+
+invsigma = zeros(d,d,k);
+sqrtdetsigma = zeros(1,k);
+
+convcrit = 0.1/100;
+
+while iter < maxiter && ~conv
+    
+    %     B = mu'*X;
+    
+    
+    for kind = 1:k
+        invsigma(:,:,kind) = inv(sigma(:,:,kind));
+        sqrtdetsigma(kind) = sqrt(det(sigma(:,:,kind)));
+    end
+    
+    B = zeros(n,k);
+    
+    for kind = 1:k
+        Xsub = X - repmat(mu(kind,:),n,1);
+        %         for nind = 1:n
+        %             gammasub(nind,kind) = Pi(kind)*exp(-.5*Xsub(nind,:)*invsigma(:,:,kind)*Xsub(nind,:)')/ (sqrtdetsigma(kind) * piconst);
+        %         end
+        
+        %         gammasub(:,kind) = Pi(kind) * exp(-.5*diag(Xsub*invsigma(:,:,kind)*Xsub')) / (sqrt(detsigma(kind)) * piconst);
+        
+        Btmp = Xsub*invsigma(:,:,kind);
+        Btmp = exp(-.5*sum(Btmp .* Xsub,2));
+        B(:,kind) = max(Btmp / (sqrtdetsigma(kind) * piconst),eps);
+        
+    end
+    
+    [alphahat,betahat,c,gamma2sm] = baumwelch(A,B',Pi);
+    
+    gamma = (alphahat .* betahat ./ repmat(c,k,1))';
+    
+    Aprev = A;
+    muprev = mu;
+    sigmaprev = sigma;
+    
+    
+    alpha = 0.001;
+    
+    Atmp = gamma2sm + alpha;
+    Asmtmp = repmat(sum(gamma(1:n-1,:))',1,k) + k*alpha;
+    
+    logA = psi(Atmp) - psi(Asmtmp);
+    A = exp(logA);
+    
+    Pitmp = gamma(1,:)' + alpha;
+    Pismtmp = sum(gamma(1,:)') + k*alpha;
+    
+    logPi = psi(Pitmp) - psi(Pismtmp);
+    Pi = exp(logPi);
+%     
+%     A = gamma2sm ./ repmat(sum(gamma(1:n-1,:))',1,k);
+%     
+%     Pi = gamma(1,:)';
+%     Pi = Pi / sum(Pi);
+%     
+    k_n = sum(gamma);
+    
+    mu = gamma'*X ./ (repmat(k_n',1,d));
+    for kind = 1:k
+        sigmatmp = (repmat(sqrt(gamma(:,kind)),1,d).*(X - repmat(mu(kind,:),n,1)));
+        sigmatmp = sigmatmp'*sigmatmp / k_n(kind);
+        
+        if det(sigmatmp) > eps & ~isnan(sigmatmp)
+            sigma(:,:,kind) = sigmatmp;
+        else
+            sigma(:,:,kind) = ((2*eps)^(1/d))*eye(d);
+        end
+    end
+    
+    
+    logprev = logp;
+    logp = -sum(log(c));
+    
+    logpvc(iter) = logp;
+    
+    if convflg
+        conv = (max(abs(1-A(:)./Aprev(:))) < convcrit || max(abs(A(:)  - Aprev(:))) < 0.0001) && ...
+            (max(abs(1-mu(:)./muprev(:))) < convcrit || max(abs(mu(:) - muprev(:))) < 0.001) && ...
+            (max(abs(1-sigma(:)./sigmaprev(:))) < convcrit || max(abs(sigma(:)-sigmaprev(:))) < 0.0001);
+    else
+        conv = (logprev - logp)/logprev < 10e-5;
+    end
+    
+
+    
+    iter = iter + 1;
+    
+end
+
+logpvc = logpvc(1:iter-1);
+
+logp = -sum(log(c));

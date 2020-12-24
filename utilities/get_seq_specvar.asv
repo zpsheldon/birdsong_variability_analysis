@@ -1,0 +1,75 @@
+function distmat = get_seq_specvar(sylarr,seqvc,featms,seqstrct,wavdir,propstrct,templatestrct,dirstrct)
+
+sylnm = length(sylarr);
+oninds = findSeq(seqstrct.vc,seqvc);
+seqnm = length(oninds);
+
+tmstmp = seqstrct.cliptms;
+lenstmp = seqstrct.cliplens;
+wavindstmp = seqstrct.wavinds;
+
+if strcmp(sylarr(1),'*')
+    oninds = oninds+1;
+    sylnm = sylnm-1;
+    sylarr = sylarr(2:end);
+end
+
+if strcmp(sylarr(end),'*')
+    sylnm = sylnm-1;
+    sylarr = sylarr(1:end-1);
+end
+
+distmat = zeros(seqnm,sylnm);
+
+[b,a] = butter(propstrct.filt_order,2*[propstrct.freqmin propstrct.freqmax]/propstrct.fs);
+
+for sylind = 1:sylnm
+    
+    sylid = sylarr{sylind};
+    
+    indOn = featms{sylind}(1);
+    indOff = featms{sylind}(2);
+    
+    specarrtmp = {};
+    
+    for seqind = 1:seqnm
+        clipind = oninds(seqind)+sylind-1;
+        
+        samp1 = ceil(seqstrct.cliptms(clipind) * propstrct.fs / 1000);
+        samp2 = samp1 + floor(seqstrct.cliplens(clipind) * propstrct.fs / 1000) - 2;
+        flnm = [wavdir filesep dirstrct.wavfls{seqstrct.wavinds(clipind)}];
+        
+        s_dim = wavread(flnm,'size');
+        samp2 = min(samp2,max(s_dim));
+        
+        signal = filter(b,a,wavread(flnm,double([samp1,samp2])));
+        
+        spec = tdft(signal,propstrct.f_winlen,propstrct.f_winadv);
+        spec = log(max(spec,propstrct.amp_cutoff))-log(propstrct.amp_cutoff);
+        specarrtmp{seqind} = spec(templatestrct.freqinds,:);
+        
+    end
+    
+    [spmn,spstd,spalgn] = mk_spec_template(specarrtmp,sylarr{sylind});
+    
+    template = templatestrct.specarr{seqvc(sylind)};
+    
+    w=dtwDist(template,spmn,[1.5 1.5 1]);
+    
+    [dmy,indOnind] = min(abs(w(:,1)-indOn));
+    [dmy,indOffind] = min(abs(w(:,1)-indOff));
+    
+    indOn = w(indOnind,2);
+    indOff = w(indOffind,2);
+    
+    spmn = spmn(:,indOn:indOff);
+    spalgn = spalgn(:,:,indOn:indOff);
+    
+    distmatmp = spalgn - shiftdim(repmat(spmn,[1,1,size(spalgn,1)]),2);
+%     distarr{templateind} = sqrt(sum(sum(distmat.^2,2),3)/numel(spmn));
+%     distarr{templateind} = sum(sum(abs(distmat),2),3)/numel(spmn);
+    distmat(:,sylind) = (sum(sum(distmatmp.^2,2),3)/numel(spmn));
+    
+    spstdarr{sylind} = spstd(:,ind;
+    
+end

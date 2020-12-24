@@ -1,0 +1,109 @@
+function [h,lenmat,errmat,cvmat,cLmat,cUmat] = plot_prepost3(seqarr,lenarr,normind)
+
+if nargin == 2
+    normind = 1;
+end
+
+h = zeros(1,4);
+
+clrarr = {'k','b','r','m','g'};
+
+lenmat = zeros(length(seqarr),length(lenarr));
+errmat = lenmat;
+cvmat = lenmat;
+cvLmat = lenmat;
+cvUmat = lenmat;
+
+seqlen = zeros(1,length(lenarr));
+seqlenerr = seqlen;
+seqcv = seqlen;
+seqcvL = seqlen;
+seqcvU = seqlen;
+
+M = length(seqarr);
+
+for i = 1:length(lenarr)
+    
+    N = size(lenarr{i},1);
+    
+    lens = (lenarr{i} - repmat(mean(lenarr{normind}),N,1)) ./ ;
+    
+    lenmat(:,i) = mean(lens)';
+    errmat(:,i) = sem(lens)';
+    
+    seqlens2 = mean(lenarr{i}')' - mean(mean(lenarr{normind}')');
+    seqlen(i) = mean(seqlens2);
+    seqlenerr(i) = sem(seqlens2);
+    
+    
+    CL = sqrt((N-1)*var(lenarr{i})/chi2inv(.025,(N-1))) ./ mean(lenarr{i});
+    CU = sqrt((N-1)*var(lenarr{i})/chi2inv(.975,(N-1))) ./ mean(lenarr{i});
+    
+    cvmat(:,i) = cv(lenarr{i})';
+    cLmat(:,i) = CL';
+    cUmat(:,i) = CU';
+    
+    seqlens = sum(lenarr{i}')';
+    
+    CL = sqrt((N-1)*var(seqlens)/chi2inv(.025,(N-1))) / mean(seqlens);
+    CU = sqrt((N-1)*var(seqlens)/chi2inv(.975,(N-1)))/ mean(seqlens);
+    
+    seqcv(i) = cv(seqlens);
+    seqcvL(i) = CL;
+    seqcvU(i) = CU;
+    
+end
+
+
+% 
+% figure
+% h(1) = subplot(2,1,1);
+% errorbar(lenmat,errmat)
+% set(gca,'xtick',1:length(seqarr),'xticklabel',seqarr,'box','off')
+% ylabel('norm len')
+% 
+% for i = 1:length(lenarr)
+%     lgndtxt{i} = num2str(i);
+% end
+% 
+% legend(lgndtxt);
+% 
+% 
+% h(2) = subplot(2,1,2);
+% errorbar(repmat(1:length(seqarr),length(lenarr),1)',cvmat,cvmat-cLmat,cUmat-cvmat)
+% set(gca,'xtick',1:length(seqarr),'xticklabel',seqarr,'box','off')
+% ylabel('length CV')
+
+
+figure
+h(3) = axes;
+clrarr = {'k','b','r','m','g','c'};
+markarr = {'o','+','x','d','s'};
+
+lgndtxt = seqarr;
+lgndtxt{end+1} = 'mean';
+
+hold on
+for i = 1:size(lenmat,1)
+    clrind = modspec(i,length(clrarr));
+    markind = modspec(i,length(markarr));
+    plot(lenmat(i,:),[clrarr{clrind} '-' markarr{markind}],'MarkerFaceColor',clrarr{clrind});
+end
+
+errorbar(seqlen,seqlenerr,'k','linewidth',3)
+legend(lgndtxt)
+
+plot([1 length(lenarr)],[0 0],'k--','linewidth',2)
+
+figure
+h(4) = axes;
+
+
+hold on
+for i = 1:size(lenmat,1)
+    clrind = modspec(i,length(clrarr));
+    markind = modspec(i,length(markarr));
+    plot(cvmat(i,:),[clrarr{clrind} '-' markarr{markind}],'MarkerFaceColor',clrarr{clrind});
+end
+
+errorbar(1:length(seqcv),seqcv,seqcv-seqcvL,seqcvU-seqcv,'k','linewidth',3)

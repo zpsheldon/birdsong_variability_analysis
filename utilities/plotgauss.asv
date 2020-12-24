@@ -1,0 +1,8 @@
+function plotgauss(htmp,mu,sigma)
+
+
+sigmatmp = squeeze(sigma([d1 d2],[d1 d2],k));
+mutmp = mu(k,:);
+
+Schol = chol(sigmatmp);
+W = U*Schol;

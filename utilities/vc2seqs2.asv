@@ -1,0 +1,107 @@
+function [seqmat,N] = vc2seqs2(vc,N_min,M_min,maxrepeat,silind,M_max)
+
+vclen = length(vc);
+labnm = length(unique(vc));
+vcinds = 1:vclen;
+
+seqarr = {};
+contflg = 1;
+seqind = 1;
+
+if nargin < 6
+    M_max = 6;
+end
+
+seqmat = zeros(500,M_max);
+N = zeros(500,1);
+
+k = 1;
+
+M = M_max;
+
+vcop = vc;
+delinds0 = zeros(1,length(vcop));
+while contflg && M > M_min
+    
+    vcmatinds = cumsum([1:(length(vcop)-M+1);ones(M-1,length(vcop)-M+1)]);
+    seq = vcop(vcmatinds);
+    dimtrans = (labnm+1) .^ [0:M-1];
+    seq = (dimtrans * seq)';
+    
+    seqtab = tabulate(-seq);
+    seqtab = seqtab(seqtab(:,1)~=0,:);
+    
+    [dmy,sortinds] = sort(seqtab(:,2),'descend');
+    seqtab = seqtab(sortinds,:);
+    seqtab2 = zeros(length(sortinds),2);
+    
+    [Nmax,maxind] = max(seqtab(:,2));
+    
+    indtmp = 0;
+    delinds = delinds0;
+    k2 = 1;
+    while ~isempty(seqtab) && Nmax >= N_min
+        
+        seqtmp = -seqtab(maxind,1);
+        seqfull = zeros(1,M);
+        seqfull(M) = floor(seqtmp / dimtrans(M));
+        for i = M-1:-1:1
+            seqfull(i) = floor(seqtmp / dimtrans(i) - seqfull(:,i+1:M)*dimtrans(2:M-i+1)');
+        end
+        
+        seqbintmp = seq2bin(seqfull);
+        seqcorrtmp = xcorr212(seqbintmp,seqbintmp,M-1);
+        maxrptlen = max(seqcorrtmp(1:M-1));
+        
+        if ~any(seqfull(i,2:end-1)==silind) & ~any(seqfull(i,:)==0) & maxrptlen <= maxrepeat
+            
+            indtmp = indtmp + 1;
+            seqtab2(indtmp,:) = [seqtmp Nmax];
+            
+            seqinds = find(seq==seqtmp);
+            seqinds = repmat(seqinds,1,M) + cumsum([zeros(Nmax,1) ones(Nmax,M-1)],2);
+            
+            vcop(seqinds) = 0;
+
+            seq = (dimtrans * vcop(vcmatinds))';
+            
+            seqtab = tabulate(-seq);
+            seqtab = seqtab(seqtab(:,1)~=0,:);
+            
+        else
+            seqtab = seqtab(setdiff(1:size(seqtab,1),maxind),:);
+        end
+        
+        [Nmax,maxind] = max(seqtab(:,2));
+    end
+    
+    
+    seqtab2 = seqtab2(1:indtmp,:);
+    
+    
+    if ~isempty(seqtab2)
+        
+        seqstmp = seqtab2(:,1);
+        seqnmtmp = length(seqstmp);
+        seqmatmp = zeros(seqnmtmp,M);
+        
+        seqmatmp(:,M) = floor(seqstmp / dimtrans(M));
+        for i = M-1:-1:1
+            seqmatmp(:,i) = floor(seqstmp / dimtrans(i) - seqmatmp(:,i+1:M)*dimtrans(2:M-i+1)');
+        end
+        
+        indstmp = k:k+seqnmtmp-1;
+        
+        seqmat(indstmp,1:M) = seqmatmp;
+        N(indstmp) = seqtab2(:,2);
+        
+        M = M - 1
+        k = k + seqnmtmp;
+
+        
+    end
+    
+end
+
+seqmat = seqmat(1:k-1,:);
+N = N(1:k-1);

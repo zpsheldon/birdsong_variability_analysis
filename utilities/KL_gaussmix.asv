@@ -1,0 +1,11 @@
+function D = KL_gaussmix(pi_f,mu_f,sigma_f,pi_g,mu_g,sigma_g)
+
+[k_f,d] = size(mu_f);
+k_g = size(mu_g,1);
+
+expD_ff = 0;
+
+for kind = 1:k_f
+   expD_ff = expD_ff + pi_f(kind)*exp(-(KL(mu_f_a,sigma_f_a,mu_f_a2,sigma_f_a2))); 
+    
+end

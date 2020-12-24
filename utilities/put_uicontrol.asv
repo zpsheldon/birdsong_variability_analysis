@@ -1,0 +1,57 @@
+function varargout = put_uicontrol(h_timingpanel,objstrings,objtags,objstyles,orientation)
+
+if nargin < 4
+    objstyles = repmat({'pushbutton'},1,length(objstrings));
+end
+
+if nargin < 5
+    orientation = 'vertical';
+end
+
+for i = 1:length(objstrings)
+
+    cb = [];
+
+    switch orientation
+
+        case 'vertical'
+
+            switch objstyles{i}
+                case 'text'
+                    pos = [.05 1-i/(length(objstrings)+.5)-0/(length(objstrings)+.5) .9 .7/(length(objstrings)+.5)];
+                case 'edit'
+                    pos = [.2 1-i/(length(objstrings)+.5)+.5/(length(objstrings)+.5) .6 .7/(length(objstrings)+.5)];
+                otherwise
+                    pos = [.05 1-i/(length(objstrings)+.5) .9 .9/(length(objstrings)+.5)];
+                    cb = '1';
+            end
+
+        case 'horizontal'
+            pos = [(i-1)/(length(objstrings)+.5)+.01 .01 .7/(length(objstrings)+.5) .98];
+            
+            if strcmp(
+            
+            switch objstyles{i}
+                case 'text'
+                    pos = [(i-1)/(length(objstrings)+.5)+.01 .01 .7/(length(objstrings)+.5) .98];
+                case 'edit'
+                    pos = [.2 1-i/(length(objstrings)+.5)+.5/(length(objstrings)+.5) .6 .7/(length(objstrings)+.5)];
+                otherwise
+                    pos = [.05 1-i/(length(objstrings)+.5) .9 .9/(length(objstrings)+.5)];
+                    cb = '1';
+            end
+
+
+    end
+
+
+    htmp = uicontrol(...
+        'Parent',h_timingpanel,...
+        'Units','normalized',...
+        'Callback',cb,...
+        'Position',pos,...
+        'String',objstrings{i},...
+        'Style',objstyles{i},...
+        'Tag',objtags{i},...
+        'Behavior',get(0,'defaultuicontrolBehavior'));
+end

@@ -1,0 +1,29 @@
+function flg = check_headers(wavdir)
+
+load([wavdir '\wavdirinfo.mat'],'dirstrct')
+
+fldir = dir(wavdir);
+flnum = length(fldir)-2;
+daynums = zeros(1,flnum);
+
+flg = 0;
+
+for flind = 1:flnum
+    [dmy,flsnew{flind}] = fileparts(fldir(flind+2).name);
+end
+
+flscommon = intersect(flsnew,dirstrct.fls);
+
+if length(flscommon) ~= length(fls) | length(flscommon) ~= dirstrct.fls
+    inpt = questdlg('.wav files have been added or deleted since header file generation, regenerate?','Header warning','Yes','No','Yes');
+    if strcmp(inpt,'Yes')
+        flg = 1;
+        mk_wavdirinfo(wavdir);
+    end
+    
+    if exist([wavdir '\clipdirinfo.mat'])
+        inpt = questdlg('Regeneratec clip header file?','Header warning','Yes','No','Yes');
+    
+    end
+    
+end

@@ -1,0 +1,24 @@
+function [V,U] = rotate_maxaccum(W,Vprev)
+
+[D,M] = size(W);
+One = ones(D,1);
+u1 = W'*One / norm(W'*One);
+V1 = W*u1;
+
+ua = null(u1');
+
+[U,S] = svds(W*ua,M-1);
+
+V = [V1 U*S];
+
+U = [u1 ua*U];
+
+if nargin==2
+    [dmy,V2] = procrustes(Vprev(:,2:end),V(:,2:end));
+    
+    [L, D, M] = svd(Vprev(:,2:end)' * V(:,2:end));
+    T = M * L';
+    V2 = V(:,2:end)*T;
+    
+    V = [V1 V2];
+end

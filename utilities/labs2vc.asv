@@ -1,0 +1,91 @@
+function [vc,labsu,seqinds2,clipons2,cliplens2,scrs2] = labs2vc(labs,seqinds,clipons,cliplens,scrs,gapmx)
+
+labsu = unique(labs);
+
+vc = zeros(length(labs),1);
+
+for i = 1:length(labsu)
+    vc(find(strcmp(labs,labsu{i}))) = i;
+end
+
+gpind = length(labsu)+1;
+labsu{end+1} = 'sil';
+
+sequ = unique(seqinds);
+seqnm = length(sequ);
+
+[dmy,srtinds] = sort([seqinds clipons],'rows');
+seqinds = seqinds(srtinds);
+clipons = clipons(srtinds);
+vc = vc(srtinds);
+cliplens = cliplens(srtinds);
+scrs = scrs(srtinds);
+
+seqtab = tabulate(seqinds);
+seqtab = seqtab(find(ismember(seqtab(:,1),sequ)),1);
+
+vc2 = zeros(2*length(clipons)+seqnm,1);
+clipons2 = vc2;
+cliplens2 = vc2;
+seqinds2 = vc2;
+scrs2 = vc2;
+
+k = 1;
+h = waitbar(0/seqnm,'Converting match structure to sequence');
+
+for seqind = 1:seqnm  
+    seqid = sequ(seqind);
+    seqindstmp = find(seqinds==seqid);
+    
+    onstmp = clipons(seqindstmp);
+    lenstmp = cliplens(seqindstmp);
+    vctmp = vc(seqindstmp);
+    scrtmp = scrs(seqindstmp);
+    
+    [onstmp,indsrt] = sort(onstmp,'ascend');
+    lenstmp = lenstmp(indsrt);
+    vctmp = vctmp(indsrt);
+    scrtmp = scrtmp(indsrt);
+    
+    if length(onstmp) > 1
+        gaps = diff(onstmp) - lenstmp(1:end-1);
+        gpinds = find(gaps>gapmx);
+        
+        if ~isempty(gpinds)
+            gpinds = gpinds+[1:length(gpinds)];
+        end
+    else
+        gpinds = [];
+    end
+    
+
+    vctmp2 = zeros(length(vctmp)+length(gpinds),1);
+        
+    clipinds = setdiff(1:length(vctmp2),gpinds);
+     
+    vctmp2(clipinds) = vctmp;
+    vctmp2(gpinds) = gpind;
+
+    indstmp = k:k+length(vctmp)+length(gpinds)-1;
+  
+    vc2(indstmp) = vctmp2;
+    clipons2(indstmp(clipinds)) = onstmp;
+    cliplens2(indstmp(clipinds)) = lenstmp;
+    seqinds2(indstmp(clipinds)) = seqid;
+    scrs2(indstmp(clipinds)) = scrtmp;
+    
+    vc2(indstmp(end)+1) = gpind;
+    
+    k = k + length(vctmp2) + 1;
+    
+    h = waitbar(seqind/seqnm,h);
+end
+
+close(h)
+
+vc = [gpind;vc2(1:k-1)];
+clipons2 = [0;clipons2(1:k-1)];
+cliplens2 = [0;cliplens2(1:k-1)];
+seqinds2 = [seqinds2(1);seqinds2(1:k-1)];
+scrs2 = [0;scrs2(1:k-1)];
+

@@ -1,0 +1,128 @@
+function [A,C,Gamma,Sigma,expz,expz2sm,Avc] = ldsan1(X,dt)
+
+[n,d] = size(X);
+
+if nargin < 2
+    dt = ones(1,n-1);
+end
+
+m = 1;
+
+P0 = rand;
+mu0 = rand;
+A = rand;
+% A = diag(.5*ones(m,1));
+% A = [.5 0;0 .5];
+C = rand(d,1);
+
+C_v = [eye(d);diff(eye(d))];
+Cinv_v = pinv(C_v);
+
+Gamma = 1;
+% Sigma = Gamma(2:2+d-1,2:2+d-1);
+
+Sigma = diag(rand(d,1));
+
+mu = zeros(n,1);
+V = mu;
+P = mu;
+
+K = zeros(n,d);
+
+J = V;
+muhat = mu;
+Vhat = V;
+
+maxiter = 1000;
+convflg = 0;
+iter = 0;
+
+Gammatmp = zeros(m);
+
+X = X - repmat(mean(X),n,1);
+
+while iter <= maxiter && ~convflg
+    
+    iter = iter + 1
+    
+    K(1,:) = P0 * C' * inv(C*P0*C' + Sigma);
+    
+    mu(1) = mu0 + K(1,:) * (X(1,:)' - C*mu0);
+    V(1) = (eye(m) - K(1,:)*C)*P0;
+    %     Gammavc = zeros(1,n);
+    
+    for i = 2:n
+        Atmp = A^dt(i-1);
+        Gammatmp = Gamma*sum(A.^(2*[0:dt(i-1)-1]));
+        %             Gammatmp = Gamma;
+        P(i-1) = Atmp * V(i-1) * Atmp' + Gammatmp;
+        K(i,:) = P(i-1) * C' * inv(C * P(i-1) * C' + Sigma);
+        mu(i) = Atmp*mu(i-1)' + K(i,:) * (X(i,:)' - C * Atmp * mu(i-1)');
+        V(i) = (eye(m) - K(i,:)*C) * P(i-1);
+    end
+    
+    muhat(n) = mu(n);
+    Vhat(n) = V(n);
+    
+    for i = n-1:-1:1
+        Atmp = A^dt(i);
+        J(i) = V(i) * Atmp' * inv(P(i));
+        muhat(i) = mu(i)' + J(i) * (muhat(i+1)' - Atmp * mu(i)');
+        Vhat(i) = V(i) + J(i) * (Vhat(i+1) - P(i)) * J(i)';
+    end
+    
+    expz2 = zeros(n,1);
+    expzzmin1 = expz2;
+    
+    expz = muhat;
+    
+    for i = 2:n
+        expzzmin1(i) = Vhat(i)*J(i-1)' + muhat(i)'*muhat(i-1);
+    end
+    
+    for i = 1:n
+        expz2(i) = Vhat(i) + muhat(i)'*muhat(i);
+    end
+    
+    mu0 = expz(1)';
+    P0 = expz2(1) - expz(1)'*expz(1);
+    Aold = A;
+    
+    const = expzzmin1(2:end);
+    coeffs = expz2(1:end-1);
+    %
+    %
+    ftmp2 = @(y,k,c1,c2)(sum(c1.*(y.^k))-c2);
+    
+    A = fzero(@(x) ftmp2(x,dt',coeffs,sum(const)),Aold)
+    Avc(iter) = A;
+    
+    if 100*abs(A-Aold)/Aold<0.01
+        convflg = 1;
+    end
+    
+    
+    %     Gamma = (squeeze(sum(expz2(2:end,:,:))) - ...
+    %         (A.^dt) * squeeze(sum(expzzmin1(2:end,:,:)))' - squeeze(sum(expzzmin1(2:end,:,:)))*(A.^dt) + (A.^dt)*squeeze(sum(expz2(1:end-1,:,:)))*(A.^dt)') / (n-1);
+    %
+%     Gamma = (sum(expz2(2:end)) - ...
+%         (A.^dt) * expzzmin1(2:end) - expzzmin1(2:end)' *(A.^dt') + (A.^(2*dt))*expz2(1:end-1)) / (n-1);
+%    
+    
+%     Gamma = 1;
+    
+    C = X'*expz * inv(sum(expz2));
+    
+    Sigma = zeros(d);
+    
+    for i = 1:n
+        Sigma = Sigma + X(i,:)'*X(i,:) - C*expz(i,:)'*X(i,:) - X(i,:)'*expz(i,:)*C' + C*expz2(i)*C';
+    end
+    
+    Sigma = Sigma / n;
+    
+    
+    
+end
+
+expz2sm = squeeze(sum(expz2));

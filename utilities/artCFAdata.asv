@@ -1,0 +1,46 @@
+function X = artCFAdata(W,psi,sigma,N)
+
+M = length(W);
+
+jtmp = zeros(N,M+1);
+
+for h = 1:M+1
+    
+    tmpvc = randperm(3);
+    tmpvc(1) = 1;
+    switch tmpvc(1)
+        case 1
+            jtmp2(:,h2) = normrnd(0,jvc(h2),N,1);
+        case 2
+            jtmp2(:,h2) = wblrnd(1.65,1.5,N,1)*jvc(h2);
+        case 3
+            jtmp2(:,h2) = wblrnd(40,50,N,1)*jvc(h2);
+            
+    end
+    
+    jtmp2(:,h2) = jtmp2(:,h2) - mean(jtmp2(:,h2));
+end
+
+j2 = diff(jtmp2')';
+
+
+% raw noise
+%     nvc = random('gamma',2,2,[1 M])*.5/2.3;
+%     n = zeros(N,M);
+%     for h2 = 1:M
+%         n(:,h2) = normrnd(0,nvc(h2),N,1);
+%     end
+
+n = zeros(N,M);
+for h2 = 1:M
+    
+    tmpvc = randperm(3);
+    tmpvc(1) = 1;
+    switch tmpvc(1)
+        case 1
+            n(:,h2) = normrnd(0,nvc(h2),N,1);
+
+g = g*W;
+
+
+X = n + j2 + g;

@@ -1,0 +1,61 @@
+function [scr,w,D,d] = dtwscore(spec1,spec2)
+
+% spec1tmp = [zeros(size(spec1,1),3) spec1];
+% spec2tmp = [zeros(size(spec1,1),3) spec2];
+
+% d = size(spec1tmp,2) - size(spec2tmp,2);
+
+d = size(spec1,2) - size(spec2,2);
+buff1 = zeros(size(spec1,1),abs(round(d/2)));
+buff2 = zeros(size(spec1,1),abs(d)-abs(round(d/2)));
+
+if d > 0
+    spec2tmp = [buff1 spec2 buff2];
+    spec1tmp = spec1;
+elseif d < 0
+    spec1tmp = [buff1 spec1 buff2];
+    spec2tmp = spec2;
+else
+    spec1tmp = spec1;
+    spec2tmp = spec2;
+end
+% 
+% [w,D,d]=dtwDist2(spec1tmp,spec2tmp,[1.4 1.4 1]);
+
+% spec1tmp = spec1tmp / max(spec1tmp(:));
+% spec2tmp = spec2tmp / max(spec2tmp(:));
+
+% maxlag = round(size(spec1tmp,2)/4);
+maxlag = 1;
+
+rvc = xcorr21(spec1tmp,spec2tmp,maxlag);
+% scr = rvc;
+[scr,lag] = min(rvc);
+
+% % D = (spec1tmp - spec2tmp).^2;
+% % 
+% % scr = mean(D(:));
+% 
+% % scr = 1 / max(min(rvc),.01);
+% 
+% 
+% 
+% pwt = [1.4 1.4 1];
+% % pwt = [1 1 1];
+% [w,D,d]=dtwDist2(spec1tmp,spec2tmp,pwt);
+
+% w = w(1:end-3,:)-3;
+% D = D(1:end-3,1:end-3);
+% d = d(1:end-3,1:end-3);
+% spec1tmp = spec1tmp(:,4:end);
+% % spec2tmp = spec2tmp(:,4:end);
+% scr = size(spec1,1) * size(w,1) / D2(w(1,1),w(1,2));
+% 
+% 
+% [i,j] = find(abs(diff(w))~=1);
+% peninds = unique(i);
+% dst = d(sub2ind(size(d),round(w(:,1)),round(w(:,2))));
+% dst(peninds) = dst(peninds)*2;
+% 
+% scr = size(spec1,1) * size(w,1) / max(sum(dst),size(spec1,1) * size(w,1)
+% * .01);

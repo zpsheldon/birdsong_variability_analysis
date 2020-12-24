@@ -1,0 +1,89 @@
+function [X,mu,sigma,p,v,L,W,classinds,maxp,varprop,pmean,coeff,lat,sampinds] = clusterspikes(X,clustN,eignm,kmax,smthwin,initN,Xns)
+
+[n,d] = size(X);
+
+if nargin < 6
+    initN = 10;
+    Xns = [];
+end
+
+Xmn = mean(X);
+X = X - repmat(Xmn,n,1);
+
+if smthwin > 0
+    X = smoothVecGauss(X,smthwin);
+    Xns = smoothVecGauss(X,smthwin);
+end
+
+[coeff, scr, lat] = princomp(X);
+
+% [coeff,lat,scr] = CFA_Wonly(X,3);
+
+sampinds = randperm(n);
+sampinds = sampinds(1:clustN);
+
+scrtot = scr(sampinds,1:eignm);
+
+[mu,sigma,p,v,L,W,s,iter,n_fail] = robgaussmix_spc(scrtot,kmax,initN);
+
+vartot = det(cov(scrtot(:,1:eignm)));
+
+pmean = zeros(1,kmax);
+vark = pmean;
+
+[maxp,classinds] = max(s');
+
+for i = 1:kmax
+    vark(i) = det(sigma(:,:,i));
+    pmean(i) = median(maxp(find(classinds==i)));
+end
+
+varprop = vark / vartot;
+
+X = scr(:,1:eignm);
+
+d = eignm;
+
+sall = zeros(n,kmax);
+
+X1 = repmat(X,[1,1,d]);
+
+X2 = shiftdim(repmat(X',[1,1,d]),1);
+% 
+% X2 = zeros(size(X1));
+% 
+% for nind = 1:n
+%    X2(:,:,nind) = X1(:,:,nind)'; 
+% end
+
+Xprod = X1 .* X2;
+
+sall = zeros(n,kmax);
+
+for kind = 1:kmax
+    lambdatmp = inv(sigma(:,:,kind));
+    
+    sqrtdetlambda = sqrt(det(lambdatmp));
+    
+    gammaconst1 = gammaln(v(kind)/2 + d/2);
+    gammaconst2 = gammaln(v(kind)/2) + log((v(kind)*pi)^(d/2));
+    c = exp(log(p(kind)*sqrtdetlambda) + gammaconst1 - gammaconst2);
+    
+    lambda1 = shiftdim(repmat(lambdatmp,[1,1,n]),2);
+    mu1 = repmat(mu(kind,:),[n,1,d]);
+    
+    d1 = sum(sum(Xprod .* lambda1,2),3);
+    d2 = sum(sum(mu1 .* X2 .* lambda1,2),3);
+    
+    mandist = d1 - 2*d2 + trace((mu(kind,:)'*mu(kind,:))*lambdatmp); 
+    
+    sall(:,kind) = c * ((1 + mandist / v(kind)) .^ (-.5*(v(kind)+d)));
+    
+end
+
+sall = sall ./ repmat(sum(sall,2),1,kmax);
+
+[maxp,classinds] = max(sall');
+
+
+    

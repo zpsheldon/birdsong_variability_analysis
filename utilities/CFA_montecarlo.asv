@@ -1,0 +1,132 @@
+function statstrct = CFA_montecarlo(W,
+
+Knm = 1000;
+M = 11;
+N = 1000;
+D = -diff(eye(M))';
+
+R = zeros(M,0);
+Q = zeros(M,0);
+
+
+pvc = zeros(1,Knm);
+psidiff = zeros(M,Knm);
+Wdiff = psidiff;
+sigmadiff = psidiff;
+psiall = psidiff;
+Wall = psidiff;
+sigmall = psidiff;
+
+sigmall2 = zeros(M-1,Knm);
+sigmadiff2 = sigmall2;
+
+jvc = 2*ones(1,M+1);
+wrl = 2*ones(1,M);
+
+nvc = [ones(floor(M/2),1)*2;1;ones(M-1-floor(M/2),1)*2]';
+
+
+for k = 1:Knm
+    %
+    %             jvc = random('gamma',1.2,3,[1 M+1])/4 + c_j;
+    %             nvc = random('gamma',3,2,[1 M])/6.3 + n_j;
+    %             wrl = normrnd(1,0.6,1,M) + w_j;
+    
+    k
+    
+    % raw jitter
+    
+    jtmp2 = zeros(N,M+1);
+    %     for h2 = 1:M+1
+    %         jtmp2(:,h2) = normrnd(0,jvc(h2),N,1);
+    %     end
+    
+    for h2 = 1:M+1
+        
+        tmpvc = randperm(3);
+        tmpvc(1) = 1;
+        switch tmpvc(1)
+            case 1
+                jtmp2(:,h2) = normrnd(0,jvc(h2),N,1);
+            case 2
+                jtmp2(:,h2) = wblrnd(1.65,1.5,N,1)*jvc(h2);
+            case 3
+                jtmp2(:,h2) = wblrnd(40,50,N,1)*jvc(h2);
+                
+        end
+        
+        jtmp2(:,h2) = jtmp2(:,h2) - mean(jtmp2(:,h2));
+    end
+    
+    j2 = diff(jtmp2')';
+    
+    
+    % raw noise
+    %     nvc = random('gamma',2,2,[1 M])*.5/2.3;
+    %     n = zeros(N,M);
+    %     for h2 = 1:M
+    %         n(:,h2) = normrnd(0,nvc(h2),N,1);
+    %     end
+    
+    n = zeros(N,M);
+    for h2 = 1:M
+        
+        tmpvc = randperm(3);
+        tmpvc(1) = 1;
+        switch tmpvc(1)
+            case 1
+                n(:,h2) = normrnd(0,nvc(h2),N,1);
+            case 2
+                n(:,h2) = wblrnd(1.65,1.5,N,1)*nvc(h2);
+            case 3
+                n(:,h2) = wblrnd(40,50,N,1)*nvc(h2);
+                
+        end
+        
+        n(:,h2) = n(:,h2) - mean(n(:,h2));
+    end
+    
+    tmpvc = randperm(3);
+    tmpvc(1) = 1;
+    switch tmpvc(1)
+        case 1
+            g = normrnd(0,1,N,1);
+        case 2
+            g = wblrnd(1.65,1.5,N,1);
+        case 3
+            g = wblrnd(40,50,N,1);
+    end
+    
+    %     g = wblrnd(1.65,1.5,N,1);
+    
+    % global noise
+    
+    g = g*wrl;
+    
+    
+    X = n + j2 + g;
+    
+    [W,psi,phi,sigma,omega,iter,n_fail,logp,Chat] = CFAfull_spc(X,Q,100,1,D,R);
+    
+    W = W * sign(sum(W));
+    
+    jttr1 = std(j2);
+    
+    jttr1hat = sqrt(diag(D*diag(sigma)*D'));
+    
+    pvc(k) = logp;
+    psidiff(:,k) = std(n)' - sqrt(psi);
+    Wdiff(:,k) = wrl' - W;
+    sigmadiff(:,k) = jttr1'-jttr1hat;
+    
+    psiall(:,k) = std(n)';
+    Wall(:,k) = std(g)';
+    sigmall(:,k) = jttr1';
+    
+    sigmall2(:,k) = std(jtmp2(:,2:end-1))';
+    sigmadiff2(:,k) = std(jtmp2(:,2:end-1))' - sqrt(sigma);
+    
+    
+end
+
+save(['art_data_homog2.mat'])

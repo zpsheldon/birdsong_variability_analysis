@@ -1,0 +1,165 @@
+/*=================================================================
+ *
+ * BAUM-WELCH
+ *
+ */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+#include "mex.h"
+#include "matrix.h"
+
+void baumwelch2(
+        double *Xpr,
+        double   *Apr,
+        double  *Epr,
+        double *ppr,
+        int K,
+        int N,
+        int D,
+        double *alphapr,
+        double *betapr,
+        double *cpr,
+        double *gammacovpr
+        ) {
+    
+    /* E is DXK, X is DXN, A is KXK, p is KX1, alpha and beta KXN, gammacov KXK */
+    int n, k, k2, d;
+    double Etmp;
+    
+    
+    /* INITIALIZE ALPHA */
+    for (k = 0; k < K; k++) {
+        
+        Etmp = 0;
+        for (d = 0; d < D; d++) {
+            Etmp += *(Xpr + d) * *(Epr + k*D + d);
+        }
+        
+        *(alphapr + k) = Etmp * *(ppr + k);
+        *cpr += *(alphapr + k);
+    }
+    
+    *cpr = 1 / *cpr;
+    
+    for (k = 0; k < K; k++) {
+        *(alphapr + k) *= *cpr;
+    }
+    
+    
+    /* ALPHA RECURSION */
+    
+    for (n = 1; n < N; n++) {
+        for (k = 0; k < K; k++) {
+            
+            Etmp = 0;
+            for (d = 0; d < D; d++) {
+                Etmp += *(Xpr + d + n*D) * *(Epr + k*D + d);
+            }
+            
+            for (k2 = 0; k2 < K; k2++) {
+                *(alphapr + k + n*K) += *(alphapr + k2 + (n-1)*K) * *(Apr + k2 + k*K);
+            }
+            
+            *(alphapr + k + n*K) *= Etmp;
+            *(cpr + n) += *(alphapr + k + n*K);
+        }
+        
+        *(cpr + n) = 1 / *(cpr + n);
+        
+        for (k = 0; k < K; k++) {
+            *(alphapr + k + n*K) *= *(cpr + n);
+        }
+        
+    }
+    
+    
+    /* BETA INITIALIZATION */
+    
+    for (k = 0; k < K; k++) {
+        *(betapr + k + (N-1)*K) = *(cpr + N - 1);
+    }
+    
+    
+    /* BETA RECURSION */
+    
+    for (n = N-1; n > 0; n--) {
+        for (k = 0; k < K; k++) {
+            
+            for (k2 = 0; k2 < K; k2++) {
+                
+                Etmp = 0;
+                for (d = 0; d < D; d++) {
+                    Etmp += *(Xpr + d + n*D) * *(Epr + k2*D + d);
+                }
+                
+                *(betapr + k + (n-1)*K) += Etmp * *(betapr + k2 + n*K) * *(Apr + k + k2*K);
+            }
+            
+            *(betapr + k + (n-1)*K) *= *(cpr + n - 1);
+        }
+        
+        
+    }
+    
+    
+    /* GAMMA 2ND MOMENT*/
+    
+    for (n = 0; n < N - 1; n++) {
+        for (k = 0; k < K; k++) {
+            for (k2 = 0; k2 < K; k2++) {
+                
+                Etmp = 0;
+                for (d = 0; d < D; d++) {
+                    Etmp += *(Xpr + d + (n+1)*D) * *(Epr + k2*D + d);
+                }
+                
+                *(gammacovpr + k + k2*K) += Etmp * *(alphapr + k + n*K) * *(Apr + k + k2*K) * *(betapr + k2 + (n+1)*K);
+            }
+            
+        }
+        
+        
+    }
+    
+    
+}
+
+void mexFunction( int nlhs, mxArray*plhs[],
+        int nrhs, const mxArray*prhs[])
+        
+{
+    double *Xpr, *Apr, *Epr, *ppr, *alphapr, *betapr, *gammacovpr, *cpr;
+    int N, D, K;
+    
+    Xpr = mxGetPr(prhs[0]);
+    Apr = mxGetPr(prhs[1]);
+    Epr = mxGetPr(prhs[2]);
+    ppr = mxGetPr(prhs[3]);
+    
+    
+    K = mxGetN(prhs[1]);
+    N = mxGetN(prhs[0]);
+    D = mxGetM(prhs[2]);
+    
+    /*argnm = mxGetN(prhs);*/
+    
+    
+    /* Create a matrix for the return argument */
+    plhs[0] = mxCreateDoubleMatrix(K, N, mxREAL);
+    alphapr = mxGetPr(plhs[0]);
+    plhs[1] = mxCreateDoubleMatrix(K, N, mxREAL);
+    betapr = mxGetPr(plhs[1]);
+    plhs[2] = mxCreateDoubleMatrix(1, N, mxREAL);
+    cpr = mxGetPr(plhs[2]);
+    plhs[3] = mxCreateDoubleMatrix(K, K, mxREAL);
+    gammacovpr = mxGetPr(plhs[3]);
+    
+    
+    /* Do the actual computations in a subroutine */
+    baumwelch2(Xpr, Apr, Epr, ppr, K, N, D, alphapr, betapr, cpr, gammacovpr);
+    
+}
+
+

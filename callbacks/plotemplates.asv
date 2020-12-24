@@ -1,0 +1,28 @@
+function plotemplates(handles)
+
+propstrct = get(handles.template_axis,'UserData');
+templatestrct = get(handles.make_template,'UserData');
+
+propstrct.selectvc = zeros(1,length(templatestrct.specarr));
+set(handles.template_axis,'UserData',propstrct);
+
+totalspeclen = 0;
+for i = 1:length(templatestrct.specarr)
+    totalspeclen = totalspeclen + size(templatestrct.specarr,2);
+end
+
+xbins = round(1000 / (propstrct.f_winadv * 1000 / propstrct.fs));
+
+plotspecstrct(handles,handles.template_axis,[],templatestrct,1000,2,'label');
+
+
+if isfield(templatestrct,'templatefl')
+    flnm = templatestrct.templatefl;
+    htmp = get(handles.template_axis,'Title');
+    maxchar = 90;
+    if length(flnm) > 90
+        flnm = ['...' flnm(end-87+1:end)];
+    end
+
+    set(htmp,'Interpreter','none','String',flnm,'FontSize',10,'Clipping','off');
+end

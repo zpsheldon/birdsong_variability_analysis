@@ -1,0 +1,17 @@
+function inds = findSeq(x,seq)
+
+%SEARCHES FOR A STANDARD SEQUENCE IN A VECTOR OF INDICES
+
+xlen = length(x);
+seqlen = length(seq);
+
+inds = find(x == seq(1));
+inds = inds(inds < xlen);
+
+ind = 2;
+
+while ind <= seqlen && ~isempty(inds)
+    inds = inds(x(inds+ind-1) == seq(ind));
+    inds = inds(inds < xlen-ind+1);
+    ind = ind + 1;
+end

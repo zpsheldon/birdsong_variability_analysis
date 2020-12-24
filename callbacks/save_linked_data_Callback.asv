@@ -1,0 +1,24 @@
+function save_linked_data_Callback(hObject, eventdata, handles)
+
+matchstrct = get(handles.load_match_data,'UserData');
+templatestrct = matchstrct.templatestrct;
+
+matchstrct = rmfield(matchstrct,'templatestrct');
+
+[matchfl,matchpth] = uiputfile('*.mat','Linked match file name');
+[templatefl,templatepth] = uiputfile('*.mat','Linked template file name');
+
+matchstrct.templatefl = [templatepth templatefl];
+
+save([matchpth matchfl],'matchstrct');
+templatenms = templatestrct.speclabs;
+
+propstrct = et(handles.template_axis,'UserData');
+
+save([templatepth templatefl],...
+    'winlen','winadv','filt_f1','filt_f2','filt_order','fs','freqinds','threshvc','templatenms','wavdir')
+
+for tempind = 1:length(templatenms)
+    eval(['template' templatenms{tempind} '=templatestrct.specarr{' num2str(tempind) '};'])
+    save([templatepth templatefl],['template' templatenms{tempind}],'-append');
+end

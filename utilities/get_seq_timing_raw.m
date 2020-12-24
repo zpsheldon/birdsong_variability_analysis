@@ -1,0 +1,130 @@
+function s = get_seq_timing_raw(sylarr,seqvc,templatestrct,seqstrct,wavdir,N,propstrct,dirstrct)
+
+sylnm = length(sylarr);
+oninds = findSeq(seqstrct.vc,seqvc);
+seqnm = length(oninds);
+
+tmstmp = seqstrct.cliptms;
+lenstmp = seqstrct.cliplens;
+wavindstmp = seqstrct.wavinds;
+
+if strcmp(sylarr(1),'*')
+    oninds = oninds+1;
+    sylnm = sylnm-1;
+    sylarr = sylarr(2:end);
+end
+
+if strcmp(sylarr(end),'*')
+    sylnm = sylnm-1;
+    sylarr = sylarr(1:end-1);
+end
+
+notenm = 0;
+for sylind = 1:length(sylarr)
+    if ~strcmp(sylarr{sylind},'sil')
+        notenm = notenm + length(templatestrct.featms{find(strcmp(templatestrct.speclabs,sylarr{sylind}))}) - 1;
+    end
+end
+
+sylvc = zeros(1,notenm);
+notenmvc = zeros(1,sylnm);
+
+sampinds = randperm(seqnm);
+sampinds = sampinds(1:min(N,seqnm));
+sampnm = length(sampinds);
+
+lens = zeros(sampnm,notenm);
+ons = zeros(sampnm,sylnm);
+sylens = ons;
+
+
+lastind = 0;
+
+for sylind = 1:sylnm
+    
+    sylid = sylarr{sylind};
+    
+    if ~strcmp(sylid,'sil')
+        
+        template_syl_ind = find(strcmp(templatestrct.speclabs,sylarr{sylind}));
+        
+        template = templatestrct.specarr{template_syl_ind};
+
+        clipinds = oninds(sampinds)+sylind-1;
+        
+        lenstmp = seqstrct.cliplens(clipinds);
+        onstmp =  seqstrct.cliptms(clipinds);
+        
+        noteinds = lastind+1:lastind+1;
+        lastind = noteinds(end);
+        
+        lens(:,noteinds) = lenstmp;
+        ons(:,sylind) = onstmp;
+        
+        if length(noteinds)>1
+            sylens(:,sylind) = sum(lens(:,noteinds)')';
+        else
+            sylens(:,sylind) = lens(:,noteinds);
+        end
+        
+        sylvc(noteinds) = sylind;
+        notenmvc(sylind) = length(templatestrct.featms{template_syl_ind})-1;
+        
+    end
+    
+end
+
+gaps = diff(ons')';
+gaps = gaps - sylens(:,1:end-1);
+
+intnm = size(lens,2)+size(gaps,2);
+lenseq = zeros(sampnm,intnm);
+sg = ones(1,intnm);
+gapinds = cumsum([notenmvc(1:end-1) + ones(1,sylnm-1)]);
+sylinds = setdiff(1:intnm,gapinds);
+sg(gapinds) = 0;
+
+lenseq(:,sylinds) = lens;
+lenseq(:,gapinds) = gaps;
+
+% [lenseq,sngDlt] = cleanInts(lenseq,5,1);
+
+seqarr(1:2:2*sylnm-1) = sylarr;
+
+for i = 2:2:2*sylnm-1
+    seqarr{i} = [seqarr{i-1} seqarr{i+1}];
+end
+
+notenms = {};
+sylind = 1;
+noteind = 1;
+
+for i = 1:length(sg)
+    if sg(i) == 1
+        if notenmvc(find(strcmp(sylarr,seqarr{sylind}))) > 1
+            notenms{i} = [seqarr{sylind} '-' num2str(noteind)];
+        else
+            notenms{i} = seqarr{sylind};
+        end
+        noteind = noteind + 1;
+    else
+        sylind = sylind + 1;
+        notenms{i} = seqarr{sylind};
+        sylind = sylind + 1;
+        noteind = 1;
+    end
+end
+
+
+clear s
+
+s.sylarr = sylarr;
+s.seqarr = notenms;
+s.lenseq = lenseq;
+s.sg = sg;
+s.seqinds = oninds(sampinds);
+
+if exist('sngDlt')
+    s.sngDlt = sngDlt;
+    s.seqinds = oninds(setdiff(1:length(oninds),sngDlt));
+end

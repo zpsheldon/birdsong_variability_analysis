@@ -1,0 +1,102 @@
+function [spmn,spstd] = mk_timing_template(specarr,smthwn,sylstr)
+
+buff = smthwn+1;
+spec = specarr{1};
+[freqnm,specLen] = size(spec);
+pad = zeros(freqnm,buff);
+
+smtmp = smoothVecGauss([pad spec pad],smthwn);
+spmn = diff(smtmp')';
+clear('smtmp')
+
+specLen = size(spmn,2);
+
+sampsz = length(specarr);
+
+padflag = 0;
+
+h = waitbar(1/(2*sampsz),['Aligning template ' sylstr]);
+
+for i = 1:2
+
+    totalInd = 1;
+
+    offsetvc = zeros(sampsz,1);
+    spmnTmp = zeros(sampsz,freqnm,specLen);
+
+    for sngInd = 1:sampsz
+
+        spec = specarr{sngInd};
+        tmp2 = zeros(freqnm,specLen);
+        smtmp = smoothVecGauss([pad spec pad],smthwn);
+        tmp2(:,1:size(smtmp,2)) = smtmp;
+        tmp2 = diff(tmp2')';
+
+        maxlag = round(size(tmp2,2)/3);
+        if size(tmp2,2) > size(spmn,2)
+            spmntmp = [zeros(freqnm,size(tmp2,2) - size(spmn,2) + 1) spmn];
+            [C,lags,nvc] = xcorr212(tmp2,spmntmp,maxlag);
+            C = C./nvc;
+            offset = lags(find(C==max(C)));
+            offset = offset - (size(tmp2,2) - size(spmn,2) + 1);
+        else
+            [C,lags,nvc] = xcorr212(tmp2,spmn,maxlag);
+            C = C./nvc;
+            offset = lags(find(C==max(C)));
+        end
+
+
+        len = specLen - abs(offset);
+
+        onind2 = max(1,-offset+1);
+        offind2 = min(onind2+len-1,size(tmp2,2));
+
+        len = offind2 - onind2 + 1;
+
+        onind1 = max(1,offset+1);
+        offind1 = onind1+len-1;
+
+        offsetvc(totalInd) = min(offset);
+
+        spmnTmp(sngInd,:,onind1:offind1) = tmp2(:,onind2:offind2);
+
+        h = waitbar((sampsz*(i-1)+totalInd)/(2*sampsz),h,['Aligning template ' sylstr]);
+
+        totalInd = totalInd + 1;
+    end
+
+    spmn = squeeze(mean(spmnTmp));
+
+end
+
+
+spmnTmp = zeros(sampsz,freqnm,specLen);
+
+close(h)
+h = waitbar(1/sampsz,['Warping template ' sylstr]);
+
+for sngInd = 1:sampsz
+
+    spec = specarr{sngInd};
+    tmp2 = zeros(freqnm,specLen);
+    smtmp = smoothVecGauss([pad spec pad],smthwn);
+    tmp2(:,1:size(smtmp,2)) = smtmp;
+    tmp2 = diff(tmp2')';
+
+    w = dtwProd(spmn,tmp2,'pwt',[1.5 1.5 1]);
+    
+    [dmy,winds] = sort(w(:,1));
+    w = w(winds,:);
+    winds = find(w(:,1) > 0);
+
+    spmnTmp(sngInd,:,w(winds,1)) = tmp2(:,round(w(winds,2)));
+
+    h = waitbar(sngInd/sampsz,h,['Warping template ' sylstr]);
+
+    totalInd = totalInd + 1;
+end
+
+spmn = squeeze(mean(spmnTmp));
+spstd = squeeze(std(spmnTmp));
+
+close(h)

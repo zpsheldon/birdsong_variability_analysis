@@ -1,0 +1,52 @@
+function [A,mu,sigma,gamma,logp,kvc] = hiddenmarkov_gauss_bayes_spc(X,k,initN,alphak)
+
+if nargin == 2
+    initN = 10;
+end
+
+if nargin < 4
+    alphak = 0.001;
+end
+
+i = 0;
+logp = -inf;
+BIC = inf;
+
+[n,d] = size(X);
+
+kvc = zeros(1,initN);
+
+while i < initN
+    
+    [Atmp,mutmp,sigmatmp,gammatmp,dmy,logptmp,DICtmp] = hiddenmarkov_gauss_bayes(X,k,alphak);
+       
+    sp = sum(gammatmp) / sum(gammatmp(:));
+    eta0 = sum(gammatmp) + k*alphak;
+    etasm0 = sum(eta0);
+    logBeta0 = psi(eta0) - psi(etasm0);
+    
+    Beta0 = exp(logBeta0);
+    
+    mhat1 = prod(sp .^ -sp);
+    mhat2 = exp(-sum(Beta0 .* logBeta0));
+    khat = mhat*(mhat-1) - 1 + mhat*d + mhat*d*(d+1)/2 + mhat;
+    
+    kvc(i) = khat;
+    
+    BICterm1 = log(n)*khat;
+
+    BICtmp = -2*logptmp + log(n)*khat;
+    
+%     if i==1 || DICtmp < DIC
+    if i==1 || BICtmp < BIC
+        A = Atmp;
+        mu = mutmp;
+        sigma = sigmatmp;
+        gamma = gammatmp;
+        logp = logptmp;
+        DIC = DICtmp;
+        BIC = BICtmp;
+    end
+    
+    i = i + 1
+end

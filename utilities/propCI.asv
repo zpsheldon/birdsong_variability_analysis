@@ -1,0 +1,6 @@
+function [l,u] = propCI(p,n,alpha)
+
+q = 1 - p;
+z = norminv(1-alpha/2,0,1);
+
+l = p + z^2 / (2*n) - z

@@ -1,0 +1,199 @@
+function [paramstrct_arr,permstrct] = CFA_fullperm(Xarr,seqarr,featarr,norptflg,m_glob,bootN)
+
+if nargin<4
+    norptflg = 0;
+end
+
+d = size(Xarr{1},2);
+
+Q = mkQmat(seqarr);
+R = mkRmat(featarr);
+D = -diff(eye(length(seqarr)))';
+
+Dnull = zeros(length(seqarr),0);
+
+if nargin >= 5
+    mvc = 1:m_glob;
+else
+    mvc = 1:3;
+end
+
+Darr = {D};
+if ~size(Q,2) || norptflg
+    Qarr = {Dnull};
+else
+    Qarr = {Dnull,Q};
+end
+
+Qarr = {Q};
+
+if ~size(R,2) || norptflg
+    Rarr = {Dnull};
+else
+    Rarr = {Dnull,R};
+end
+
+R = Dnull;
+Rarr = {Dnull};
+
+Xnm = length(Xarr);
+Nsub = zeros(1,Xnm);
+msub = Nsub;
+Qdsub = Nsub;
+Ddsub = Nsub;
+Rdsub = Nsub;
+
+for Xind = 1:Xnm
+    Nsub(Xind) = size(Xarr{Xind},1);
+    Carr{Xind} = cov(Xarr{Xind});
+    paramstrct_arr{Xind} = CFA_fullmod_noboot(Xarr{Xind},seqarr,featarr,norptflg,m_glob);
+    
+    msub(Xind) = size(paramstrct_arr{Xind}.glob,2);
+    
+    Qdsub(Xind) = size(paramstrct_arr{Xind}.indrpt,2);
+    Ddsub(Xind) = size(paramstrct_arr{Xind}.jitter,2);
+    Rdsub(Xind) = size(paramstrct_arr{Xind}.jitterpt,2);
+    
+    Wall_arr{Xind} = zeros(d,msub(Xind),bootN);
+    sigmall_arr{Xind} = zeros(Ddsub(Xind),bootN);
+    psiall_arr{Xind} = zeros(d,bootN);
+    phiall_arr{Xind} = zeros(Qdsub(Xind),bootN);
+    omegall_arr{Xind} = zeros(Rdsub(Xind),bootN);
+    logpall_arr{Xind} = zeros(1,bootN);
+    
+end
+
+n = sum(Nsub);
+Xall = zeros(n,d);
+
+k = 1;
+for Xind = 1:Xnm
+    Xall(k:k+Nsub(Xind)-1,:) = Xarr{Xind};
+    k = k + Nsub(Xind);
+end
+
+h = waitbar(0/bootN,'Bootstrapping FA parameters for permutation test');
+
+i = 0;
+n_fail = 0;
+
+while i < bootN
+    
+    bootinds = randperm(n);
+    k = 1;
+    
+    itersub = zeros(Xnm,1);
+    logpsub = itersub;
+    
+    psiarrtmp = {};
+    Warrtmp = {};
+    sigmarrtmp = {};
+    phiarrtmp = {};
+    omegarrtmp = {};
+    
+    for Xind = 1:Xnm
+        
+        Xtmp = Xall(bootinds(k:k+Nsub(Xind)-1),:);
+        k = k + Nsub(Xind);
+        Xtmp = Xall(bootinds,:);
+        [Wtmp,psitmp,phitmp,sigmatmp,omegatmp,itertmp] = ...
+            CFAfull_spc(Xtmp,paramstrct_arr{Xind}.Q,100,msub(Xind),paramstrct_arr{Xind}.D,paramstrct_arr{Xind}.R,0);
+        
+        itersub(Xind) = itertmp;
+        
+        psiarrtmp{Xind} = psitmp;
+        Warrtmp{Xind} = Wtmp;
+        sigmarrtmp{Xind} = sigmatmp;
+        phiarrtmp{Xind} = phitmp;
+        omegarrtmp{Xind} = omegatmp;
+        
+        if m > 1
+            Warrtmp{Xind} = rotate_maxaccum(Warrtmp{Xind},paramstrct_arr{Xind}.glob);
+        end
+        
+        Chat = Wtmp*Wtmp' + D*diag(sigmatmp)*D' + Q*diag(phitmp)*Q' + diag(psitmp) + R*diag(omegatmp)*R';
+        logpsub(i) = -n/2*(d*log(2*pi) + log(det(Chat)) + trace(inv(Chat)*Carr{Xind}));
+        
+    end
+    
+    if sum(itersub<100000)==3
+        
+        i = i + 1;
+        
+        for Xind = 1:Xnm
+            
+            Wall_arr{Xind}(:,:,i) = Warrtmp{Xind};
+            sigmall_arr{Xind}(:,i) = sigmarrtmp{Xind};
+            psiall_arr{Xind}(:,i) = psiarrtmp{Xind};
+            phiall_arr{Xind}(:,i) = phiarrtmp{Xind};
+            omegall_arr{Xind}(:,i) = omegarrtmp{Xind};
+            logpall_arr{Xind}(i) = logpsub(i);
+            
+        end
+        
+        
+        
+        h = waitbar(i/bootN,h,'Bootstrapping FA parameters for permutation test');
+        
+    else
+        n_fail = n_fail + 1;
+        
+    end
+   
+end
+
+
+permstrct.Wall_arr = Wall_arr;
+permstrct.sigmall_arr = sigmall_arr;
+permstrct.psiall_arr = psiall_arr;
+permstrct.phiall_arr = phiall_arr;
+permstrct.omegall_arr = omegall_arr;
+permstrct.logall_arr = Wall_arr;
+
+bootstrct.sqrtpsimn = mean(sqrt(psiall),2);
+bootstrct.sqrtpsisem = std(sqrt(psiall),0,2);
+bootstrct.psiall = psiall;
+
+bootstrct.Wmn = [];
+bootstrct.Wsem = [];
+bootstrct.sqrtphimn = [];
+bootstrct.sqrtphisem = [];
+bootstrct.sqrtomegamn = [];
+bootstrct.sqrtomegasem = [];
+bootstrct.sqrtsigmamn = [];
+bootstrct.sqrtsigmasem = [];
+
+bootstrct.Wall = [];
+bootstrct.phiall = [];
+bootstrct.omegall = [];
+bootstrct.sigmall = [];
+
+if m > 0
+    bootstrct.Wmn = mean(Wall,3);
+    bootstrct.Wsem = std(Wall,0,3);
+    bootstrct.Wall = Wall;
+end
+
+if Qd > 0
+    bootstrct.sqrtphimn = mean(sqrt(phiall),2);
+    bootstrct.sqrtphisem = std(sqrt(phiall),0,2);
+    bootstrct.phiall = phiall;
+end
+
+if Rd > 0
+    bootstrct.sqrtomegamn = mean(sqrt(omegall),2);
+    bootstrct.sqrtomegasem = std(sqrt(omegall),0,2);
+    bootstrct.omegall = omegall;
+end
+
+if Dd > 0
+    bootstrct.sqrtsigmamn = mean(sqrt(sigmall),2);
+    bootstrct.sqrtsigmasem = std(sqrt(sigmall),0,2);
+    bootstrct.sigmall = sigmall;
+end
+
+bootstrct.logpmn = mean(logpall);
+bootstrct.logpsem = std(logpall);
+bootstrct.logpall = logpall;
+
+close(h)

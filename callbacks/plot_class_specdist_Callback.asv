@@ -1,0 +1,172 @@
+function plot_class_voting_Callback(hObject, eventdata, handles)
+% hObject    handle to plot_tempmatches (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+template_propstrct = get(handles.template_axis,'UserData');
+templatestrct = get(handles.make_template,'UserData');
+clipstrct = get(handles.load_clips,'UserData');
+clip_propstrct = get(handles.clip_axis,'UserData');
+
+template_selectinds = find(template_propstrct.selectvc);
+
+h = subplot(1,1,1,'Parent',handles.analysis_panel);
+cla(h,'reset');
+xvc = 0:clipstrct.kopt;
+
+labarr = ['x' templatestrct.speclabs(template_selectinds)];
+labnm = length(labarr);
+
+if ~isfield(clipstrct,'distmat')
+    errordlg('Distance matrix not available, try optimizing scheme first')
+    return;
+end
+
+labstmp = clipstrct.speclabs;
+classtmp = clipstrct.class;
+indsnon = 1:length(labstmp);
+
+for ind = 1:length(template_selectinds)
+    indstmp = find(~strcmp(labstmp,templatestrct.speclabs(template_selectinds(ind))));
+    indsnon = intersect(indsnon,indstmp);
+end
+
+labstmp(indsnon) = {'x'};
+
+labsu = unique(labstmp);
+labvc = zeros(length(labstmp),1);
+for labind = 1:length(labsu)
+    labvc(find(strcmp(labstmp,labsu{labind}))) = labind;
+end
+
+indsmat = repmat(labvc,1,length(labstmp)
+
+dimnm = length(template_selectinds);
+
+h = zeros(dimnm);
+h_pts = zeros(size(matchtmp));
+
+for dimind1 = 1:dimnm
+    for dimind2 = 1:dimnm
+        
+        h(dimind2,dimind1)=subplot(dimnm,dimnm,dimind1+(dimind2-1)*dimnm,'Parent',handles.analysis_panel);
+        
+        hold on
+        
+        xlims = [xvc(1)-.5 xvc(end)+.5];
+        if dimind1 ~= dimind2           
+          
+            ylims = [min(matchtmp(:,template_selectinds(dimind2)))-.05 max(matchtmp(:,template_selectinds(dimind2)))+.05];
+            ylim(ylims);
+            
+            threshmin = min(threshvc([template_selectinds(dimind1) template_selectinds(dimind2)]));
+            valmax = min(ylims(end),xlims(end));
+              
+            for labind = 1:labnm            
+                indstmp = find(strcmp(labstmp,labarr(labind)));  
+                x1 = matchtmp(indstmp,template_selectinds(dimind1)) + normrnd(0,.3,length(indstmp),1);
+                x2 = matchtmp(indstmp,template_selectinds(dimind2)) + normrnd(0,.3,length(indstmp),1);
+                htmp = plot(h(dimind2,dimind1),x1,x2,...
+                    'Marker',markarr{labind},'MarkerFaceColor',clrarr{labind},'MarkerEdgeColor',clrarr{labind},'LineStyle','none');
+            end
+            
+            if dimind1 == 2 & dimind2 == 1
+                legend(labarr)
+            end
+            
+            plot(h(dimind2,dimind1),[-.5 valmax],[-.5,valmax],'k-','linewidth',2)
+            
+            plot(h(dimind2,dimind1),[-.5 threshvc(template_selectinds(dimind2))-.5],[threshvc(template_selectinds(dimind2))-.5 threshvc(template_selectinds(dimind2))-.5],'k-','linewidth',2)
+            plot(h(dimind2,dimind1),[threshvc(template_selectinds(dimind1))-.5 threshvc(template_selectinds(dimind1))-.5],[-.5 threshvc(template_selectinds(dimind1))-.5],'k-','linewidth',2)
+            
+        else
+            
+            matchinds = intersect(find(strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})), ...
+                find(strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})));
+            
+            nowininds = intersect(find(strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})),...
+                 find(~strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})));
+            
+%             nonmatchinds = setdiff(find(maxinds==template_selectinds(dimind1)),find(strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})));
+            nonmatchinds = setdiff(find(strcmp(clipstrct.class,templatestrct.speclabs{template_selectinds(dimind1)})),...
+                find(strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})));
+            nonmatchinds2 = intersect(find(~strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})),...
+                find(~strcmp(clipstrct.speclabs,templatestrct.speclabs{template_selectinds(dimind1)})));
+            
+            N_match = hist(matchtmp(matchinds,template_selectinds(dimind1)),xvc)';
+            N_nonmatch = hist(matchtmp(nonmatchinds,template_selectinds(dimind1)),xvc)';
+            N_nonmatch2 = hist(matchtmp(nonmatchinds2,template_selectinds(dimind1)),xvc)';
+            N_nowin = hist(matchtmp(nowininds,template_selectinds(dimind1)),xvc)';
+            
+            
+%             N_match = N_match / max(1,sum(N_match));
+%             N_nonmatch = N_nonmatch / max(1,sum(N_nonmatch));
+%             N_nonmatch2 = N_nonmatch2 / max(1,sum(N_nonmatch2));
+%             N_nowin = N_nowin / max(1,sum(N_nowin));
+            
+            plot(h(dimind2,dimind1),xvc,N_match,'k-o','linewidth',2)
+            hold on
+            plot(h(dimind2,dimind1),xvc,N_nowin,'k--d','linewidth',2)
+            plot(h(dimind2,dimind1),xvc,N_nonmatch,'k-.+','linewidth',2)
+%             plot(h(dimind2,dimind1),xvc,N_nonmatch2,'k-d','linewidth',2)
+            
+            thresh = threshvc(template_selectinds(dimind1))-.5;
+            
+%             ylim([0 1])
+            ylims = get(gca,'ylim');
+            
+            plot(h(dimind2,dimind1),[thresh;thresh],ylims,'k-','linewidth',2,'color',[.75 .75 .75])
+      
+            if dimind1==1
+                legend({'match','match-nonwin','nonmatch-win','vote thresh'},'location','North')
+            end
+            
+        end
+        
+        xlim(xlims);
+        
+        if dimind2 < dimnm
+            set(h(dimind2,dimind1),'xtick',[])
+        end
+        
+        if dimind1 > 1
+            set(h(dimind2,dimind1),'ytick',[])
+        end
+        
+        if dimind2 == dimnm
+            xlabel(labarr{dimind1+1});
+        end
+        
+        if dimind1 == 1
+            ylabel(labarr{dimind2+1})
+        end
+        
+        if dimind2 == 1
+            title(['error = ' num2str(round(1000*clipstrct.errvc(template_selectinds(dimind1)))/10) '%'])
+        end
+        
+        
+        hold off
+        
+    end
+    
+    if dimnm > 1
+        yticks = get(h(end,1),'xtick');
+        fct = diff(get(h(1,1),'ylim')) / diff(get(h(end,1),'ylim'));
+        set(h(1,1),'ytick',yticks*fct,'yticklabel',yticks)
+    end
+    
+    
+end
+
+if dimnm == 1
+   ylabel('count')
+%    set(gca,'ytick',[0:.1:1],'yticklabel',[0:.1:1])
+    
+end
+
+if dimnm > 1
+    err = length(find(~strcmp(classtmp,labstmp)))/length(clipstrct.speclabs);
+    set(handles.mainfig,'CurrentAxes',h(1,1))
+    text('String',['Total error = ' num2str(round(1000*err)/10) '%'],'fontweight','bold','Units','normalized','Position',[.5 1+.1*dimnm 0],'HorizontalAlignment','center');
+end

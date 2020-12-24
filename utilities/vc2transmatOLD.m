@@ -1,0 +1,50 @@
+function [transmat,P,rownms,colnms] = vc2transmatOLD(vc,order)
+
+vc = vc(:)';
+
+if nargin == 1
+    order = 1;
+end
+
+xu = unique(vc);
+xnm = length(xu);
+
+if order > 1
+    inds = cumsum([1:(length(vc)-order+1);ones(order-1,length(vc)-order+1)]);
+    vcord = vc(inds);
+%     dimtrans = (xnm+1) .^ [0:order-1];
+%     vcord = dimtrans * vcmat;
+    
+    xuord = unique(vcord','rows');
+%     vcuord = dimtrans * xuord;
+    xnmord = length(xuord);
+
+else
+   vcord = vc;
+   vcuord = xu;
+   xnmord = xnm;
+   xuord = xu';
+    
+end
+
+[tf, loc] = ismember(vcord(1,:)',xu','rows');
+[tf, locord] = ismember(vcord',xuord,'rows');
+
+transmat = zeros(xnmord,xnm);
+
+% for i = 1:xnmord
+%     for j = 1:xnmord
+%         transmat(i,j) = sum(vcord(1:end-1)==vcuord(i) & vcord(2:end) == vcuord(j));
+%     end 
+% end
+
+
+prinds = locord(1:end-order) + xnmord*(loc(order+1:end)-1);
+
+t = tabulate(prinds);
+itmp2 = find(t(:,2));
+transmat(t(itmp2,1)) = transmat(t(itmp2,1)) + t(itmp2,2);
+
+P = transmat ./ repmat(sum(transmat,2),1,length(xu));
+rownms = xuord';
+colnms = xu';

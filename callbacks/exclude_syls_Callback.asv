@@ -1,0 +1,35 @@
+function exclude_syls_Callback(hObject, eventdata, handles)
+
+propstrct = get(handles.template_axis,'UserData');
+template_selectinds = find(propstrct.selectvc);
+
+matchstrct = get(handles.load_match_data,'UserData');
+templatestrct = matchstrct.templatestrct;
+
+
+sylset = get(handles.exclude_syls,'UserData');
+if isempty(sylset)
+    sylset = ones(1,length(propstrct.selectvc));
+end
+
+sylset(template_selectinds) = 1 - sylset(template_selectinds);
+
+plotspecstrct(handles,handles.template_axis,[],templatestrct,1000,0,'label');
+propstrct = get(handles.template_axis,'UserData');
+
+
+for ind = 1:length(sylset)
+    if ~sylset(ind)
+        CData = get(propstrct.h(ind),'CData');
+        XData = get(propstrct.h(ind),'XData');
+        YData = get(propstrct.h(ind),'YData');
+        CData = 1+CData*.15;
+        XData = XData*.9;
+        YData = YData*.9;
+        set(propstrct.h(ind),'CData',CData,'XData',XData,'YData',YData);
+    end
+end
+
+set(handles.exclude_syls,'UserData',sylset);
+
+deselect_all_Callback(handles.template_axis);

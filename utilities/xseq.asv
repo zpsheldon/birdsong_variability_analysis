@@ -1,0 +1,14 @@
+function y = xseq(x,seq)
+
+%SEARCHES FOR A STANDARD SEQUENCE IN A VECTOR OF INDICES
+
+xlen = length(x);
+seqlen = length(seq);
+
+y = ones(1,xlen - seqlen + 1);
+
+for i = 1:xlen - seqlen + 1
+    y(i) = sum(abs(x(i:i+seqlen-1) - seq));
+end
+
+[dmy,y] = find(y==0);

@@ -1,0 +1,59 @@
+function [psi,sigma,sigma2,iter,n_fail,logp,sigma0,sigma20] = CFAJ_spc_jitteronly2(X,J,bootN)
+
+[n,d] = size(X);
+
+sigma = zeros(d,bootN);
+sigma2 = zeros(1,bootN);
+psi = sigma;
+iter = zeros(1,bootN);
+logp = iter;
+
+psi0 = sigma;
+sigma0 = sigma;
+sigma20 = sigma2;
+
+D = inv(tril(ones(d)));
+C = cov(X)*n/(n-1);
+vr = diag(C);
+
+i = 0;
+n_fail = 0;
+
+h = waitbar(0/bootN,'Calculating FA parameters');
+
+while i < bootN
+
+    %     indtmp = ceil(n*rand(n,1));
+    
+    sigma0tmp = diag(vr.*rand(d,1));
+    psi0tmp = diag(vr.*rand(d,1));
+    sigma20tmp = mean(vr)*rand;
+    
+    [sigmatmp,psitmp,sigma2tmp,itertmp,degflg] = CFA_jitteronly2(X,J,sigma0tmp,psi0tmp,sigma20tmp);
+
+    if itertmp < 1000 && degflg
+        i = i + 1;
+        
+        sigma(:,i) = diag(sigmatmp);
+        psi(:,i) = diag(psitmp);
+        sigma2(i) = diag(sigma2tmp);
+        
+        sigma0(:,i) = diag(sigma0tmp);
+        psi0(:,i) = diag(psi0tmp);
+        sigma20(i) = sigma20tmp;
+
+        iter(i) = itertmp;
+        
+        Chat = D*sigmatmp*D' + psitmp + J*sigma2tmp*J';
+        logp(i) = -n/2*(d*log(2*pi) + log(det(Chat)) + trace(inv(Chat)*C));
+        
+        h = waitbar(i/bootN,h,'Calculating FA parameters');
+        
+    else
+        n_fail = n_fail + 1
+    end
+
+end
+
+close(h)
+

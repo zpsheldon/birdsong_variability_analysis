@@ -1,0 +1,18 @@
+function [l,onset,offset] = getLen(s)
+
+s = s(:)';
+
+s2 = diff(smoothVecGauss(ampwav(s,256,128),1024/128));
+
+s2on = s2(1:round(length(s2)/3));
+pkInds = localMaxDer(abs(s2on),max(abs(s2on))/2);
+pkInds = pkInds(s2on(pkInds)>0);
+onset = pkInds(1);
+
+s2off = s2(end-round(length(s2)/3):end);
+
+pkInds = localMaxDer(abs(s2off),max(abs(s2off))/2);
+pkInds = pkInds(s2off(pkInds)<0);
+offset = pkInds(end) + ;
+
+l = (offset - onset)*44100/(128*1000);

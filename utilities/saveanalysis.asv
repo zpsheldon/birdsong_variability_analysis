@@ -1,0 +1,6 @@
+function [] = saveanalysis(strct)
+
+[filename,pathname] = uiputfile('*m','Choose file name');
+
+
+

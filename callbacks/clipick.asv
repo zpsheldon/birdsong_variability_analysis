@@ -1,0 +1,23 @@
+function varargout = clipick(hObject, eventdata, handles)
+
+state = get(hObject,'Selected');
+propstrct = get(get(hObject,'Parent'),'UserData');
+id = get(hObject,'UserData');
+
+hax = get(hObject,'Parent');
+clims = get(hax,'clim');
+
+switch state
+    case 'off'
+        set(hObject,'Selected','on');
+        propstrct.selectvc(id) = 1;
+%         set(hObject,'CData',get(hObject,'CData')+clims(2)/3)
+        set(hObject,'CData',-get(hObject,'CData')+clims(2))
+    case 'on'
+        set(hObject,'Selected','off');
+        propstrct.selectvc(id) = 0;
+        set(hObject,'CData',get(hObject,'CData')-clims(2)/3)
+end
+
+set(get(hObject,'Parent'),'UserData',propstrct);
+

@@ -1,0 +1,45 @@
+function h = plotdensity(X,binm_x,binm_y)
+
+if nargin == 1
+    binm_x = 50;
+end
+
+if nargin < 2
+    binm_y = binm_x;
+end
+
+[n,d] = size(X);
+
+figure
+
+subind = 1;
+
+for d1 = 1:d
+    for d2 = d1+1:d
+        
+        subplot(floor(d/2),ceil((d*(d-1)/2)/floor(d/2)),subind)
+        
+        lim11 = min(X(:,d1));
+        lim12 = max(X(:,d1));
+        
+        dlim = (lim12 - lim11)/binm_x;
+
+        vc1 = lim11:dlim:lim12;
+        
+        lim21 = prctile(scrtot(:,d2),p1);
+        lim22 = prctile(scrtot(:,d2),p2);
+        vc2 = lim21:dlim:lim22;
+        
+        
+        [N,C] = hist3(scrtot(:,[d1 d2]),{vc1,vc2});
+        imagesc(C{1},C{2},N');
+        
+        hold on
+        
+        set(gca,'ydir','normal')
+        
+        subind = subind + 1;
+        
+    end
+end
+        

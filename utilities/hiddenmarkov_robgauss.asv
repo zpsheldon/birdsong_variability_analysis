@@ -1,0 +1,332 @@
+function [A,mu,sigma,Pi,v,LL,DIC,W,iter,s,LLvc,u,mumu,logu] = hiddenmarkov_robgauss(X,k,alphak,zeroinds,LLconvflg,A0,Pi0,mu0,sigma0,v0,u0,logu0,mumu0)
+
+[n,d] = size(X);
+
+maxiter = 1000;
+C = cov(X);
+
+if nargin < 3
+    alphak = 0.001;
+end
+
+if nargin < 4
+    zeroinds = [];
+end
+
+if nargin < 5
+    LLconvflg = 1;
+end
+
+if nargin < 1\3
+    if ~isempty(zeroinds)
+        A0 = rand(k);
+        A0(1,1) = 0;
+        ptmp = sum(A0) / sum(A0(:));
+        
+        mu0 = repmat(mean(X),k,1) .* ((1/3) + (4/3)*rand(k,d));
+        mu0 = repmat(mean(X),k,1) .* mu0 ./ repmat((ptmp*mu0),k,1);
+        mu0(1,:) = zeros(1,d);
+        
+        dmu = mu0 - repmat(mean(X),k,1);
+        sigmamu = sum(repmat(ptmp',1,d).*dmu.*dmu);
+        
+        minvar = diag(diag(diag(C)/(k^2)));
+        
+        sigma0 = repmat(diag(max(minvar,diag(C)-sigmamu')),[1,1,k]);
+        sigma0(:,:,1) = .01*eye(d);
+        
+        Pi0 = [1 zeros(1,k-1)];
+        
+    else
+        A0 = rand(k);
+        A0 = A0 ./ repmat(sum(A0,2),1,k);
+        
+        ptmp = sum(A0) / sum(A0(:));
+        
+        mu0 = repmat(mean(X),k,1) .* ((1/3) + (4/3)*rand(k,d));
+        mu0 = repmat(mean(X),k,1) .* mu0 ./ repmat((ptmp*mu0),k,1);
+        
+        dmu = mu0 - repmat(mean(X),k,1);
+        sigmamu = sum(repmat(ptmp',1,d).*dmu.*dmu);
+        
+        minvar = diag(diag(diag(C)/(k^2)));
+        
+        sigma0 = repmat(diag(max(minvar,diag(C)-sigmamu')),[1,1,k]);
+        
+        Pi0 = zeros(1,k);
+        piconst = (2*pi)^(d/2);
+        for kind = 1:k
+            Xsub = X(1,:) - mu0(kind,:);
+            Pi0(kind) = exp(-.5*diag(Xsub* inv(sigma0(:,:,kind))*Xsub')) / (sqrt(det((sigma0(:,:,kind)))) * piconst);
+        end
+        
+        Pi0 = Pi0 / sum(Pi0);
+    end
+    
+    v0 = (rand(1,k)+1)*20;
+    u0 = ones(n,k)/2;
+    logu0 = log(u0);
+    
+    lambda0 = sigma0;
+    mumu0 = sigma0;
+    
+    for kind = 1:k
+        lambda0(:,:,kind) = inv(max(sigma0(:,:,kind),eps));
+        mumu0(:,:,kind) = mu0(kind,:)'*mu0(kind,:);
+    end
+    
+end
+
+
+
+eta0 = .1;
+p0 = 0.0001;
+alpha0 = alphak * k;
+
+
+mu = mu0;
+lambda = lambda0;
+Pi = Pi0;
+mumu = mumu0;
+A = A0;
+v = v0;
+u = u0;
+logu = logu0;
+
+logdetlambda = zeros(1,k);
+for kind = 1:k
+    lambdatmp = lambda(:,:,kind);
+    mulambda = repmat(mu(kind,:)',1,d) .* lambdatmp;
+    d1 = Xprod * lambdatmp(:);
+    d2 = X2 * mulambda(:);
+    mandist(:,kind) = d1 - 2*d2 + trace(mumu(:,:,kind)*lambdatmp);
+    
+    logdetlambda(kind) = log(det(lambda(:,:,kind)));
+end
+
+Winv = zeros(size(lambda));
+W = Winv;
+W0 = eye(d);
+W0inv = inv(W0);
+
+a = zeros(n,k);
+b = a;
+mandist = a;
+
+
+X1 = repmat(X,[1,1,d]);
+X2 = shiftdim(repmat(X',[1,1,d]),1);
+Xprod = X1 .* X2;
+Xprod = reshape(Xprod,n,d^2);
+
+X2 = reshape(X2,n,d^2);
+
+pmat = zeros(maxiter,k);
+LLprev = -inf;
+
+r = zeros(n,k);
+
+onesvec = ones(n,1);
+
+pidimconst = d*log(2*pi);
+
+ps0 = sum(A) / sum(A(:));
+psprev = ps0;
+muprev = mu0;
+Aprev = A;
+
+iter = 0;
+conv = 0;
+
+logC_W = -eta0*.5*log(det(W0)) - (eta0*d*.5*log(2) + d*(d-1)*.25*log(pi) + sum(gammaln((eta0+1-[1:d])/2)));
+
+R = zeros(d,d,k);
+
+vprev = v0;
+lambdaprev = lambda0;
+
+Lvc = zeros(maxiter,1);
+LLvc = Lvc;
+
+LLprev = -inf;
+
+
+while conv == 0 && iter < maxiter
+    iter = iter + 1;
+    
+    for kind = 1:k
+        
+        r(:,kind) = max(exp((.5*logdetlambda(kind)-.5*pidimconst)*onesvec + ...
+            d*.5*logu(:,kind) - .5*u(:,kind).* mandist(:,kind)),eps);
+        
+        %         for nind = 1:n
+        %             r(nind,kind)  = max(exp(logp(kind)+.5*logdetlambda(kind) + d*.5*logu(nind,kind) - ...
+        %                 .5*u(nind,kind)*mandist(nind,kind) - .5*d*log(2*pi)),eps);
+        %         end
+    end
+    
+    [alphahat,betahat,c,s2sm] = baumwelch(A,r',Pi);
+    s = (alphahat .* betahat ./ repmat(c,k,1))';
+    s = max(s,eps);
+    
+    
+    eta = eta0 + sum(s);
+    
+    %     w = s;
+    
+    w = s .* u;
+    
+    
+    for kind = 1:k
+        
+        %         Winv(:,:,kind) = W0inv;
+        %         for nind = 1:n
+        %             Winv(:,:,kind) = Winv(:,:,kind) + s(nind,kind)*u(nind,kind)*(X(nind,:)'*X(nind,:) -...
+        %                 X(nind,:)'*mu(kind,:) - mu(kind,:)'*X(nind,:) + mumu(:,:,kind));
+        %         end
+        
+        wtmp = repmat(sqrt(w(:,kind)),1,d);
+        Xtmp1 = X .* wtmp;
+        Xtmp2 = Xtmp1 .* wtmp;
+        matmp = Xtmp2'*repmat(mu(kind,:),n,1);
+        %         mumutmp = squeeze(sum(shiftdim(repmat(mumu(:,:,kind),[1,1,n]),2) .*  repmat(w(:,kind),[1,d,d])));
+        %
+        
+        mumutmp = mumu(:,:,kind)*sum(w(:,kind));
+        Winv(:,:,kind) = W0inv + Xtmp1'*Xtmp1 + mumutmp - matmp - matmp';
+        
+        W(:,:,kind) = inv(Winv(:,:,kind));
+        lambda(:,:,kind) = eta(kind)*W(:,:,kind);
+        
+        logdetlambda(kind) = log(det(lambda(:,:,kind)));
+        
+        shat = sum(s(:,kind));
+        
+        vconst = 1 + sum(s(:,kind).*(logu(:,kind)-u(:,kind)))/shat;
+        %         for nind = 1:n
+        %             vconst = vconst + s(nind,kind)*(logu(nind,kind)-u(nind,kind))/shat;
+        %         end
+        
+        v(kind) = abs(fzero(@(v_k) vfun(v_k,vconst),vprev(kind)));
+        
+        R(:,:,kind) = lambda(:,:,kind) * sum(w(:,kind)) + p0*eye(d);
+        mtmp = inv(R(:,:,kind)) * lambda(:,:,kind)*sum(repmat(w(:,kind),1,d).*X)';
+        mu(kind,:) = mtmp;
+        mumu(:,:,kind) = mtmp*mtmp' + inv(R(:,:,kind));
+    end
+    
+    
+    for kind = 1:k
+        
+        lambdatmp = lambda(:,:,kind);
+        %
+        %         for nind = 1:n
+        %             mandist2(nind,kind) = X(nind,:)*lambdatmp*X(nind,:)' - ...
+        %                 2*X(nind,:)*lambdatmp*mu(kind,:)' + ...
+        %                 trace(mumu(:,:,kind)*lambdatmp);
+        %
+        %             a2(nind,kind) = (v(kind) + s(nind,kind)*d)/2;
+        %             b2(nind,kind) = (v(kind) + s(nind,kind)*mandist2(nind,kind))/2;
+        %         end
+        
+        %         lambda1 = shiftdim(repmat(lambdatmp,[1,1,n]),2);
+        %         mu1 = repmat(mu(kind,:),[n,1,d]);
+        %
+        %         d1 = sum(sum(Xprod .* lambda1,2),3);
+        
+        mulambda = repmat(mu(kind,:)',1,d) .* lambdatmp;
+        d1 = Xprod * lambdatmp(:);
+        d2 = X2 * mulambda(:);
+        
+        %         d2 = sum(sum(mu1 .* X2 .* lambda1,2),3);
+        %
+        mandist(:,kind) = d1 - 2*d2 + trace(mumu(:,:,kind)*lambdatmp);
+        
+        a(:,kind) = (v(kind) + s(:,kind)*d)/2;
+        b(:,kind) = (v(kind) + s(:,kind).*mandist(:,kind))/2;
+        
+        
+    end
+    
+    
+    u = a ./ b;
+    
+    psia = psi(a);
+    logb = log(b);
+    
+    logu = psia - logb;
+
+    alpha = s2sm + alphak;
+    alphasm = sum(s(1:n-1,:)) + alpha0;
+    alphasmat = repmat(alphasm',1,k);
+    
+    logA = psi(alpha) - psi(alphasmat);
+    A = exp(logA);
+    
+    Pitmp = s(1,:)' + alphak;
+    Pismtmp = sum(s(1,:)') + alpha0;
+    
+    logPi = psi(Pitmp) - psi(Pismtmp);
+    
+    Pi = exp(logPi);
+    LL = -sum(log(c));
+
+    LLdiff = 1 - LL / LLprev;
+    
+    LLvc(iter) = LL;
+    
+    if nargout > 15
+        mumat(iter,:,:) = mu;
+        pmat(iter,:) =  sum(s) / sum(s(:));
+        vmat(iter,:) = v;
+    end
+    
+    ps = sum(s) / sum(s(:));
+    pmat(iter,:) =  sum(s) / sum(s(:));
+    Adiff = (1 - max(A(:),eps) ./ max(Aprev(:),eps));
+    mdiff = (1 - max(mu(:),eps) ./ max(muprev(:),eps));
+    lambdadiff = (1 - max(lambda(:),eps) ./ max(lambdaprev(:),eps));
+    vdiff = (1 - v(:) ./ vprev(:));
+%     psdiff = ps - psprev;
+    %     Ldiff = 100*(L - Lprev) / Lprev;
+    
+    psdiff = 1 - (max(psprev(:),eps) ./ max(ps(:),eps));
+    
+    if ~LLconvflg
+        conv = max(abs([Adiff;mdiff;lambdadiff;vdiff;psdiff])) < 0.1/100;
+    else
+        conv = LLdiff > 0 && LLdiff < 0.1/100;
+    end
+
+%     logpprev = psi(alphasm / n);
+%     logAprev = logA;
+    Aprev = A;
+    muprev = mu;
+    lambdaprev = lambda;
+    vprev = v;
+    psprev = ps;
+    LLprev = LL;
+    %
+    %     Lprev = L;
+    
+    if iter == 500
+       'here' 
+    end
+    
+end
+
+LLvc = LLvc(1:iter);
+sigma = zeros(d,d,k);
+
+DIC = 0;
+
+for kind = 1:k
+    sigma(:,:,kind) = inv(lambda(:,:,kind));
+end
+
+if nargout > 14
+    Lmat = Lmat(1:iter,:);
+    mumat = mumat(1:iter,:,:);
+    pmat = pmat(1:iter,:);
+    vmat = vmat(1:iter,:);
+end

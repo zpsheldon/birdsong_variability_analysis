@@ -1,0 +1,107 @@
+function sample_clip_matches_Callback(hObject, eventdata, handles)
+% hObject    handle to sample_clip_matches (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+templatestrct = get(handles.make_template,'UserData');
+template_propstrct = get(handles.template_axis,'UserData');
+propstrct = template_propstrct;
+
+load([templatestrct.wavdir filesep 'clipdirinfo.mat']);
+load([templatestrct.wavdir filesep 'wavdirinfo.mat']);
+
+[scrs,max_inds] = max(templatestrct.matchmat_all');
+
+templatenm = length(templatestrct.specarr);
+    
+bins = 0:.1:1.3;
+bins2 = 0:.1:3;
+
+bins = 0:5:70;
+bins2 = 0:5:70;
+
+distmat = zeros(length(bins),templatenm);
+distmat2 = zeros(length(bins2),templatenm);
+
+sample_num = inputdlg('Target sample # per bin');
+sample_num = str2double(sample_num{1});
+
+clipinds = zeros(1,sample_num*templatenm*length(bins));
+clipind = 1;
+
+for templateind = 1:templatenm
+    
+    indstmp = find(max_inds==templateind);
+    scrstmp = scrs(indstmp);
+    
+    distmat(:,templateind) = histc(scrstmp,bins)';
+    distmat2(:,templateind) = histc(scrstmp,bins2)';
+    
+    scrstmp = floor(scrstmp /5) * 5;
+    scrstmp(find(scrstmp>max(bins))) = max(bins);
+
+    for binind = 1:length(bins)
+       
+        indstmptmp = find(scrstmp == bins(binind)); 
+        indstmptmp = indstmptmp(randperm(length(indstmptmp)));
+        
+        indstmptmp = indstmptmp(1:min(sample_num,length(indstmptmp)));
+        
+        clipinds(clipind:clipind+length(indstmptmp)-1) = indstmp(indstmptmp);
+        clipind = clipind + length(indstmptmp);
+        
+    end
+    
+end
+
+clipinds = clipinds(1:clipind-1);
+clipnm = length(clipinds);
+
+% indsrt = randperm(length(clipinds));
+indsrt = 1:length(clipinds);
+
+clipstrct.clipsamps = clipstrct.clipsamps(clipinds(indsrt));
+clipstrct.wavinds = clipstrct.wavinds(clipinds(indsrt));
+clipstrct.clipinds = clipstrct.clipinds(clipinds(indsrt));
+clipstrct.clipons = clipstrct.clipons(clipinds(indsrt));
+clipstrct.speclabs = templatestrct.speclabs(max_inds(clipinds(indsrt)));
+clipstrct.scr = scrs(clipinds(indsrt));
+
+clipstrct.matchmat = templatestrct.matchmat_all(clipinds(indsrt),:);
+
+clipstrct.dirstrct = dirstrct;
+
+propstrct.selectvc = zeros(1,clipnm);
+
+freqs = template_propstrct.fs*[0:template_propstrct.f_winlen/2]/template_propstrct.f_winlen;
+clipstrct.freqinds = find(freqs >= template_propstrct.freqmin & freqs <= template_propstrct.freqmax);
+
+clipstrct.speclens = zeros(1,clipnm);
+
+for clipind = 1:clipnm
+    samp1 = clipstrct.clipons(clipind);
+    samp2 = clipstrct.clipons(clipind) + clipstrct.clipsamps(clipind) - 1;
+    flnm = [clipstrct.wavdir filesep clipstrct.dirstrct.wavfls{clipstrct.wavinds(clipind)}];
+    clipstrct.wavarr{clipind} = wavread(flnm,double([samp1,samp2]));
+    clipstrct.specarr{clipind} = tdft(clipstrct.wavarr{clipind},propstrct.f_winlen,propstrct.f_winadv);
+    clipstrct.specarr{clipind} = log(max(clipstrct.specarr{clipind}(clipstrct.freqinds,:),propstrct.amp_cutoff)) - log(propstrct.amp_cutoff);
+    clipstrct.speclens(clipind) = size(clipstrct.specarr{clipind},2);
+end
+
+cla(handles.clip_axis,'reset');
+
+set(handles.clip_axis,'UserData',propstrct);
+set(handles.load_clips,'UserData',clipstrct);
+
+plotspecstrct(handles,handles.clip_axis,handles.clip_slider,clipstrct,1000,5,'label');
+
+set(handles.clip_slider,'Value',1)
+clip_slider_Callback(handles.clip_slider, eventdata, handles);
+
+distrct.distmat = distmat;
+distrct.distmat2 = distmat2;
+distrct.bins = bins;
+distrct.bins2 = bins2;
+
+set(handles.sample_clip_matches,'UserData',distrct);

@@ -1,0 +1,98 @@
+function [vc,labsu,seqinds2,clipons2,cliplens2,indtrans2] = labs2vc2(labs,seqinds,clipons,cliplens,gapmx)
+
+labsu = unique(labs);
+
+vc = zeros(length(labs),1);
+
+for i = 1:length(labsu)
+    vc(strcmp(labs,labsu{i})) = i;
+end
+
+gpind = length(labsu)+1;
+labsu{end+1} = 'sil';
+
+sequ = unique(seqinds);
+seqnm = length(sequ);
+
+[dmy,srtinds] = sortrows([seqinds' clipons']);
+seqinds = seqinds(srtinds);
+clipons = clipons(srtinds);
+vc = vc(srtinds);
+cliplens = cliplens(srtinds);
+
+indtrans = srtinds;
+
+seqinds = double(seqinds);
+
+seqtab = tabulate(seqinds);
+seqtab = seqtab(ismember(seqtab(:,1),sequ),1:2);
+[dmy,srtinds] = sort(seqtab(:,1));
+seqtab = seqtab(srtinds,:);
+
+vc2 = zeros(2*length(clipons)+seqnm,1);
+clipons2 = vc2;
+cliplens2 = vc2;
+seqinds2 = vc2;
+indtrans2 = vc2;
+
+k = 1;
+% h = waitbar(0/seqnm,'Converting match structure to sequence');
+
+seq2 = 0;
+
+for seqind = 1:seqnm
+
+    seqid = seqtab(seqind,1);
+    seq1 = seq2 + 1;
+    seq2 = seq1 + seqtab(seqind,2) - 1;
+    
+    seqindstmp = seq1:seq2;
+    
+    onstmp = clipons(seqindstmp);
+    lenstmp = cliplens(seqindstmp);
+    vctmp = vc(seqindstmp);
+    
+    if length(onstmp) > 1
+        gaps = diff(onstmp) - lenstmp(1:end-1);
+        gpinds = find(gaps>gapmx);
+        
+        if ~isempty(gpinds)
+            gpinds = gpinds+[1:length(gpinds)];
+        end
+    else
+        gpinds = [];
+    end
+    
+    
+    vctmp2 = zeros(length(vctmp)+length(gpinds),1);
+    
+    vctmp2(gpinds) = gpind;
+    clipinds = ~vctmp2;
+    vctmp2(clipinds) = vctmp;
+    
+    indstmp = k:k+length(vctmp)+length(gpinds)-1;
+    
+    vc2(indstmp) = vctmp2;
+    clipons2(indstmp(clipinds)) = onstmp;
+    cliplens2(indstmp(clipinds)) = lenstmp;
+    seqinds2(indstmp(clipinds)) = seqid;
+    
+    indtrans2(indstmp(clipinds)) = indtrans(seqindstmp);
+    
+    vc2(indstmp(end)+1) = gpind;
+    
+    k = k + length(vctmp2) + 1;
+%     
+%     if mod(seqind,500)==0
+%         h = waitbar(seqind/seqnm,h);
+%     end
+end
+
+% close(h)
+
+vc = [gpind;vc2(1:k-1)];
+clipons2 = [0;clipons2(1:k-1)];
+cliplens2 = [0;cliplens2(1:k-1)];
+indtrans2 = [0;indtrans2(1:k-1)];
+seqinds2 = [seqinds2(1);seqinds2(1:k-1)];
+

@@ -1,0 +1,88 @@
+function [C_theta,semW,semN,semJ,semWvc,semNvc,semJvc] = asympcov_CFA2(W,psi,sigma,X)
+
+d = length(W);
+
+dim2 = d*(d+1)/2;
+
+D = -diff(eye(d))';
+
+Dp = mkDp(d);
+
+E = W*W' + D*sigma*D' + psi;
+Einv = inv(E);
+
+N = size(X,1);
+
+Y = zeros(size(X,1),dim2);
+
+X = X - repmat(mean(X),N,1);
+
+for i = 1:N
+    Ytmp = X(i,:)'*X(i,:);
+    Y(i,:) = vech(Ytmp);
+end
+
+S_y = cov(Y);
+
+indsDp = find(tril(ones(d)));
+
+I = eye(d-1);
+Itmp = I(:);
+Itmp = 2*sqrt(sigma(:));
+
+dE_D = zeros(d-1,dim2);
+dE_I = zeros(d,dim2);
+dE_psi = zeros(d,dim2);
+
+for i = 1:d-1
+    Dtmp = zeros(size(D));
+    Dtmp(:,i) = D(:,i);
+    Dtmp = kron(Dtmp,Dtmp);
+    dtmp = Dtmp*Itmp;
+    dtmp = dtmp(indsDp);
+    dE_D(i,:) = dtmp;
+end
+
+I2 = eye(d);
+I = 2*sqrt(psi);
+for i = 1:d
+    Itmp = zeros(size(I));
+    Itmp(:,i) = I(:,i);
+    dE_I(i,:) = vech(Itmp);
+    
+    
+    Itmp2 = zeros(size(I));
+    Itmp2(:,i) = I2(:,i);
+    dE_I2(i,:) = vech(Itmp2);
+end
+
+Wmat = W*W';
+
+for i = 1:d
+    Wtmp = zeros(size(Wmat));
+    Wtmp(:,i) = Wmat(:,i)/W(i);
+    Wtmp(i,:) = Wmat(:,i)/W(i);
+    dE_W(i,:) = vech(Wtmp);
+end
+
+dE_W = dE_W .* (1 + dE_I2);
+
+dE = [dE_W;dE_D;dE_I];
+
+C1 = asympcov_CFA(W,psi,sigma,N)*N;
+
+
+Omega_sub = Dp'*kron(Einv,Einv)*Dp/2;
+C_theta = C1 * dE * Omega_sub * S_y * Omega_sub * dE' * C1 / N;
+
+% C_theta = inv(dE * inv(S_y) * dE') / N;
+
+sems = sqrt(diag(C_theta));
+
+semWvc = sems(1:d);
+semJvc = sems(d+1:2*d-1);
+semNvc = sems(2*d:end);
+
+semW = mean(sems(2:d-1));
+semJ = mean(sems(d+2:2*d-2));
+semN = mean(sems(2*d+1:end-1));

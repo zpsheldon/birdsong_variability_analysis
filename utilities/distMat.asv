@@ -1,0 +1,30 @@
+function d = distMat(x,y,xvarmat)
+% function d = distMat(x,y,xvarmat)
+% computes pairwise Euclidean distance between columns of x and y.
+% xvarmat is an optional argument that is generated in the code if not
+% given (cuts down on processing if this function is in a loop).
+
+[rows,N] = size(x);
+
+ysm = y.^2;
+
+if rows > 1
+    ysm = sum(ysm);
+end
+
+yvarmat = repmat(ysm,N,1);
+covmat = x'*y;
+
+if nargin < 3
+    [rows,M] = size(y);
+    xsm = x.^2;
+
+    if rows > 1
+        xsm = sum(xsm);
+    end
+
+%     xvarmat = repmat(xsm',1,M);
+    xvarmat = ones(xsm';
+end
+
+d = xvarmat + yvarmat - 2*covmat;

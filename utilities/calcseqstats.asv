@@ -1,0 +1,22 @@
+function [Nvc,Pvc,Nvcb,Pbvcb,transmat] = calcseqstats(seqvc,vc)
+
+seqlen = length(seqvc);
+vclen = length(vc);
+
+Nvc = zeros(1,seqlen-1);
+Nvcb = Nvc;
+
+inds = find(vc == seqvc(1));
+Nvc(1) = length(inds);
+for ind = 2:seqlen
+    inds = inds(vc(inds+ind-1) == seqvc(ind));
+    Nvc(ind) = length(inds);
+end
+
+
+inds = find(vc == seqvc(seqlen));
+Nvcb(seqlen) = length(inds);
+for ind = 2:seqlen
+    inds = inds(vc(inds+ind-1) == seqvc(ind));
+    Nvc(ind) = length(inds);
+end

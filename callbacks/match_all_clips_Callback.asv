@@ -1,0 +1,171 @@
+function match_all_clips_Callback(hObject, eventdata, handles)
+% hObject    handle to match_all_clips (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+templatestrct = get(handles.make_template,'UserData');
+propstrct = get(handles.template_axis,'UserData');
+trainstrct = get(handles.load_clips,'UserData');
+
+usecur = 0;
+if ~isempty(trainstrct)
+    wavdir = trainstrct.wavdir;
+    opt = questdlg('Use current clip data?','Data prompt','Yes','No','Yes');
+    if strcmp(opt,'Yes')
+        usecur = 1;
+    end
+end
+
+if ~usecur
+    [flnm,flpth] = uigetfile('*.mat','Choose training data');
+    training_filename = [flpth flnm];
+    if ~training_filename
+        return;
+    end
+    
+    load(training_filename);
+    trainstrct = clipstrct;
+    trainstrct.clipfl = training_filename;
+    
+    if ~exist('wavdir')
+        wavdir = trainstrct.wavdir;
+    end
+    
+end
+
+flg = check_headers(wavdir);
+
+load([wavdir '\wavdirinfo.mat']);
+load([wavdir '\clipdirinfo.mat']);
+
+freqinds = trainstrct.freqinds;
+labsu = unique(trainstrct.speclabs);
+clipnm = length(clipstrct.clipons);
+
+[flnm,flpth] = uiputfile('*.mat','Choose where to save match data');
+match_filename = [flpth flnm];
+if ~match_filename
+    return;
+end
+
+
+clipnm = length(clipstrct.clipons);
+useans = questdlg('Use manually labeled training data or match everything?','Training option','Use labeled','Match everything','Use labeled');
+
+switch useans
+    case 'Use labeled'
+        
+        protonm = length(trainstrct.specarr);
+        
+        traininds = zeros(1,protonm);
+        for protoind = 1:protonm
+            traininds(protoind) = find(clipstrct.wavinds==trainstrct.wavinds(protoind) & clipstrct.clipinds==trainstrct.clipinds(protoind));
+        end
+        
+        novinds = setdiff(1:clipnm,traininds);
+        novnm = length(novinds);
+        
+        class(traininds) = trainstrct.speclabs;
+
+        
+    case 'Match everything'
+        novinds = 1:clipnm;
+        novnm = clipnm;
+    otherwise
+        return;
+end
+
+
+[b,a] = butter(propstrct.filt_order,2*[propstrct.freqmin propstrct.freqmax]/propstrct.fs);
+winlen = 512;
+winadv = 512;
+
+
+f = propstrct.fs*[0:winlen/2]/winlen;
+f = f(trainstrct.freqinds);
+
+strct = ABconfig;
+amp_cutoff = propstrct.amp_cutoff;
+
+protonm = length(trainstrct.specarr);
+votevc = zeros(clipnm,1);
+
+clipstr = num2str(novnm);
+msg = ['Matching clips (' clipstr ')'];
+
+protodist = zeros(1,protonm);
+
+h = waitbar(1/novnm,msg);
+
+for clipind = 1:novnm
+    
+    samp1 = clipstrct.clipons(novinds(clipind));
+    samp2 = clipstrct.clipons(novinds(clipind)) + clipstrct.clipsamps(novinds(clipind)) - 1;
+    flnm = [wavdir '\' dirstrct.wavfls{clipstrct.wavinds(novinds(clipind))} '.wav'];
+    
+    if exist(flnm)
+        s = filter(b,a,wavread(flnm,double([samp1,samp2])));
+        clip = tdft(s,winlen,winadv);
+        clip = log(max(clip(freqinds,:),amp_cutoff)) - log(amp_cutoff);
+        
+        for protoind = 1:protonm
+            protodist(protoind) = dtwscore(clip,trainstrct.specarr2{protoind});
+        end
+        
+        [dmy,srtinds] = sort(protodist,2,'ascend');
+        srtinds = srtinds(1:trainstrct.kopt);
+        t = tabulate(trainstrct.speclabs(srtinds));
+        
+        %     t = tabulate(trainstrct.speclabs(srtinds(clipind,:)));
+        
+        winind = find(cell2mat(t(:,2))==max(cell2mat(t(:,2))));
+        if length(winind)>1
+            distmp = protodist(srtinds);
+            winindind = 1;
+            winscr = mean(distmp(find(strcmp(t{winind(winindind),1},trainstrct.speclabs(srtinds)))));
+            
+            for indtmp = 2:length(winind)
+                scrtmp = mean(distmp(find(strcmp(t{winind(winindind),1},trainstrct.speclabs(srtinds)))));
+                if scrtmp < winscr
+                    winindind = indtmp;
+                    winscr = scrtmp;
+                end
+            end
+            
+            winind = winind(winindind);
+        end
+        
+        votes = t{winind,2};
+        
+        classind = find(strcmp(labsu,t(winind,1)));
+        
+        if ~isempty(classind) && votes >= trainstrct.threshvc(classind)
+            class{novinds(clipind)} = t{winind,1};
+        else
+            class{novinds(clipind)} = 'x';
+        end
+        
+        h = waitbar(clipind/novnm,h);
+        
+    else
+        errordlg([flnm ' missing, matching canceled'])
+        return;
+    end
+    
+end
+
+close(h)
+
+cliplens = 1000 * double(clipstrct.clipsamps) / propstrct.fs;
+cliptms = 1000 * double(clipstrct.clipons) / propstrct.fs;
+
+matchstrct.cliplabs = class;
+matchstrct.wavdir = clipstrct.wavdir;
+matchstrct.wavinds = clipstrct.wavinds;
+matchstrct.clipinds = clipstrct.clipinds;
+matchstrct.cliptms = cliptms;
+matchstrct.cliplens = cliplens;
+matchstrct.trainingfl = trainstrct.clipfl;
+
+save(match_filename,'matchstrct','novinds')

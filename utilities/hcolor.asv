@@ -1,0 +1,26 @@
+function handles2 = hcolor(handles)
+
+pnl_clr = [1 .7 .7];
+bttn_clr = [.7 .7 1];
+edit_clr = [1 1 1];
+dflt = [.95 .95 .95];
+
+handlenms = fieldnames(handles);
+
+for i = 1:length(handlenms)
+    h = getfield(handles,handlenms{i});
+    if isfield(get(h),'BackgroundColor')
+        switch get(h,'Type')
+            case 'pushbutton'
+                clr = bttn_clr;
+            case 'edit'
+                clr = edit_clr;  
+            case 'panel'
+                clr = pnl_clr;
+            otherwise
+                clr = dflt;
+        end
+    
+        set(h,'BackgroundColor',clr);
+    end 
+end

@@ -1,0 +1,47 @@
+function [A,Pi,mu,sigma,gamma,Arr,Piarr,muarr,sigmarr,logpvc,bicvc,mvc,logparr] = hiddenmarkov_gauss_BIC(X,kvc,iter,zeroinds)
+
+entvc = zeros(1,length(kvc));
+mvc = entvc;
+bicvc = entvc;
+logpvc = entvc;
+
+[n,d] = size(X);
+
+if nargin < 3
+    iter = 10;
+end
+
+if nargin < 4
+    zeroinds = [];
+end
+
+for kind = 1:length(kvc)
+    [A{kind},Pi{kind},mu{kind},sigma{kind},gamma{kind},logpvc(kind),dmy,dmy,vctmp,logparr{] = hiddenmarkov_gauss_spc(X,kvc(kind),iter,zeroinds);
+    entvc(kind) = -sum(A{kind}(:)' .* log(max(A{kind}(:)',.0001)))/kvc(kind);
+    
+    
+    mvc(kind) = kvc(kind)*(kvc(kind)-1) - 1 + kvc(kind)*d + kvc(kind)*d*(d+1)/2 + kvc(kind);
+    bicvc(kind) = -2 * logpvc(kind) + log(n) * mvc(kind);
+    
+    kvc(kind)
+    
+end
+
+
+
+[bic,minind] = min(bicvc);
+% A = A{minind};
+% E = E{minind};
+% p = p{minind};
+% logp = logpvc(minind);
+
+Arr = A;
+Piarr = Pi;
+muarr = mu;
+sigmarr = sigma;
+
+A = A{minind};
+mu = mu{minind};
+sigma = sigma{minind};
+gamma = gamma{minind};
+Pi = Pi{minind};

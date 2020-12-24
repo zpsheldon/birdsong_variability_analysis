@@ -1,0 +1,198 @@
+function plot_seq_egs_Callback(hObject, eventdata, handles)
+
+seqstrct = get(handles.compile_sequences,'UserData');
+propstrct = get(get(handles.analysis_panel,'Children'),'UserData');
+templatestrct = get(handles.template_axis,'UserData');
+matchstrct = get(handles.load_match_data,'UserData');
+
+tmopt = 0;
+labopt = 1;
+
+fs = templatestrct.fs;
+winlen = templatestrct.f_winlen;
+winadv = templatestrct.f_winadv;
+freqinds = matchstrct.templatestrct.freqinds;
+
+seqind = find(propstrct.selectvc);
+seq = seqstrct.seqs{seqind};
+seqvc = seqstrct.seqmat(seqind,:);
+seqvc = seqvc(find(seqvc));
+sylnm = length(seq);
+oninds = findSeq(seqstrct.vc,seqvc);
+
+tmstmp = seqstrct.cliptms;
+lenstmp = seqstrct.cliplens;
+wavindstmp = seqstrct.wavinds;
+
+if strcmp(seq(1),'*')
+    oninds = oninds+1;
+    sylnm = sylnm-1;
+    seq = seq(2:end);
+end
+
+if strcmp(seq(end),'*')
+    sylnm = sylnm-1;
+    seq = seq(1:end-1);
+end
+
+ons = tmstmp(oninds);
+offs = tmstmp(oninds+sylnm-1) + lenstmp(oninds+sylnm-1);
+
+wavinds = wavindstmp(oninds);
+
+load([matchstrct.wavdir filesep 'wavdirinfo.mat'])
+
+buff = 200;
+specbuff = round(200 / (winadv * 1000/ fs));
+
+if tmopt
+    seqlen = offs-ons;
+    %     inds = [find(seqlen<prctile(seqlen,5));find(seqlen>prctile(seqlen,95))];
+    %
+    [seqlen_srt,indsrt] = sort(seqlen);
+    inds = round(length(seqlen)*[2 98]/100);
+    inds = indsrt(inds)';
+    
+    maxlen = seqlen(inds(2));
+    minlen = seqlen(inds(1));
+    
+elseif labopt
+    inds = randperm(length(wavinds));
+    inds = inds(1:min(length(inds),1));
+else
+    inds = randperm(length(wavinds));
+    inds = inds(1:min(length(inds),12));
+end
+
+f = fs * [0:winlen/2-1] / winlen;
+f = f(freqinds);
+dt = 1000 * winadv / fs;
+midfreq = f(round(length(f)/2));
+ds = 1000 / fs;
+
+htmp = figure;
+
+spc = 30;
+if tmopt
+    specall = zeros(2*length(f)+spc,round(maxlen/dt));
+end
+
+k = 0;
+for i = inds
+    
+    k = k + 1;
+    flnm = [matchstrct.wavdir filesep dirstrct.wavfls{wavinds(i)}];
+    
+    siz = wavread(flnm,'size');
+    sampsmax = siz(1);
+    
+    if tmopt
+        
+        on = max(1,floor(fs * (ons(i)-10) / 1000));
+        off = min(floor(fs * (offs(i)+10) / 1000),sampsmax);
+        
+        
+    else
+        on = max(1,floor(fs * (ons(i)-buff) / 1000));
+        off = min(floor(fs * (offs(i) + buff) / 1000),sampsmax);
+        
+    end
+    
+    s = wavread(flnm,[on,off]);
+    spec = tdft(s,winlen,winadv);
+    spec = log(max(spec(freqinds,:),templatestrct.amp_cutoff)) - log(templatestrct.amp_cutoff);
+    
+    t = on*ds+[0:size(spec,2)-1]*dt;
+    
+    if tmopt
+        
+        lendiff = round(((maxlen-minlen)/2)/dt);
+        buff = 5;
+        if k == 1
+            specall([1:size(spec,1)]+size(spec,1)+spc,buff+lendiff:buff+lendiff+size(spec,2)-1) = spec;
+            
+        else
+            specall(1:size(spec,1),buff:buff+size(spec,2)-1) = spec;
+        end
+        
+    elseif labopt
+        
+        midfreq = f(length(f))+10;
+        t = t - t(1);
+        
+        
+        imagesc(t,f,spec);
+        set(gca,'ydir','normal')
+        
+        onsall = tmstmp(oninds(i):oninds(i)+sylnm-1);
+        lensall = lenstmp(oninds(i):oninds(i)+sylnm-1);
+        labpos = onsall + lensall/2;
+        
+        for labind = 1:sylnm
+            text(labpos(labind),midfreq,seq{labind},'fontsize',20,'color','k','HorizontalAlignment','center','fontweight','bold')
+        end
+        
+    else
+        subplot(4,3,k)
+        
+        
+        
+        imagesc(t,f,spec);
+        set(gca,'ydir','normal')
+        hold on
+        plot([ons(i) ons(i)],[min(f) max(f)],'m-','linewidth',5)
+        plot([offs(i) offs(i)],[min(f) max(f)],'m-','linewidth',5)
+        
+        onsall = tmstmp(oninds(i):oninds(i)+sylnm-1);
+        lensall = lenstmp(oninds(i):oninds(i)+sylnm-1);
+        labpos = onsall + lensall/2;
+        
+        for labind = 1:sylnm
+            text(labpos(labind),midfreq,seq{labind},'fontsize',20,'color','k','HorizontalAlignment','center','fontweight','bold')
+        end
+        
+        %     if tmopt
+        %         lendiff = maxlen-(t(end)-t(1));
+        %         xlim([t(1)-lendiff/2 t(end)+lendiff/2]);
+        %     end
+        %
+        title([dirstrct.wavfls{wavinds(i)} ' (wav ' num2str(wavinds(i)) ')'],'Interpreter','none','fontsize',10,'fontweight','bold')
+        
+    end
+    
+end
+
+if tmopt
+    t =  [1:size(specall,2)]*dt;
+    imagesc(t,1:size(specall,1),specall);
+    set(gca,'ytick',[],'ydir','normal');
+    
+    hold on
+    
+    buff = buff*dt;
+    onsall1 = tmstmp(oninds(1):oninds(1)+sylnm-1);
+    onsall2 = tmstmp(oninds(2):oninds(2)+sylnm-1);
+    
+    lensall1 = lenstmp(oninds(1):oninds(1)+sylnm-1);
+    lensall2 = lenstmp(oninds(2):oninds(2)+sylnm-1);
+    
+    
+    offsall1 = onsall1 + lensall1;
+    offsall2 = onsall2 + lensall2;
+    
+    onsall1 = onsall1 - onsall1(1);
+    offsall1 = offsall1 - onsall1(1);
+    %    labpos = onsall + lensall/2;
+    
+    for i = 1:sylnm
+        plot([buff+onsall1(i) buff+lendiff*dt+onsall2(i)],[size(spec,1) size(spec,1)+spc],'-m','linewidth',3)
+        %       text(labpos(labind),midfreq,seq{labind},'fontsize',20,'color','k','HorizontalAlignment','center','fontweight','bold')
+        plot([buff+offsall1(i) buff+lendiff*dt+offsall2(i)],[size(spec,1) size(spec,1)+spc],'-m','linewidth',3)
+        
+    end
+    
+end
+set(htmp,'Units','normalized','Position',[0.1    0.1    0.8    0.8])
+
+
+objtags = {'pick_spec_features','set_spec_features','spec_dist','N_lab','N'};
