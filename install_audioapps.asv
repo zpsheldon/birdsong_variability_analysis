@@ -1,0 +1,17 @@
+clear
+clc
+
+outdir = ['.' filesep 'utilities'];
+
+cfls = {'convc.c','matchTemplate.c','mkCumDist.c','mkCumProd.c','xcorr21.c','xcorr212.c','xseqc.c'};
+
+for flind = 1:length(cfls)    
+    eval(['mex' ' ' outdir filesep cfls{flind} ' -outdir 'outdir]);   
+end
+
+mex .\utilities\matchTemplate.c -outdir .\utilities
+mex .\utilities\mkCumDist.c -outdir .\utilities
+mex .\utilities\mkCumProd.c -outdir .\utilities
+mex .\utilities\xcorr21.c -outdir .\utilities
+mex .\utilities\xcorr212.c -outdir .\utilities
+mex .\utilities\xseqc.c -outdir .\utilities

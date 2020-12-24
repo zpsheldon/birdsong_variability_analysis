@@ -1,0 +1,961 @@
+function varargout = clip_analysis(varargin)
+
+h_mainfig = clipanalysis_mainfig();
+
+handles = guihandles(h_mainfig);
+
+handlenms = fieldnames(handles);
+handles.clickfun = @clipick;
+set(handles.max_gap,'Callback','1');
+
+for i = 1:length(handlenms)
+    h = getfield(handles,handlenms{i});
+    if isfield(get(h),'Callback') & strcmp(get(h,'Callback'),'1')
+        eval(['set(h,''Callback'',','{@' get(h,'Tag') '_Callback,handles});'])
+    end
+    
+end
+
+propstrct = ABconfig;
+set(handles.template_axis,'UserData',propstrct);
+
+hcolor(handles);
+
+subplot(1,1,1,'Parent',handles.analysis_panel,'xtick',[],'ytick',[]);
+subplot(1,1,1,'Parent',handles.analysis_panel2,'xtick',[],'ytick',[]);
+
+%--------------------------------------------------------------------------
+function clear_axes_Callback(hObject, eventdata, handles)
+
+h = subplot(1,1,1,'Parent',handles.analysis_panel);
+cla(h,'reset')
+set(h,'xtick',[],'ytick',[])
+
+h = subplot(1,1,1,'Parent',handles.analysis_panel2);
+cla(h,'reset')
+set(h,'xtick',[],'ytick',[])
+
+%--------------------------------------------------------------------------
+function load_match_data_Callback(hObject, eventdata, handles)
+
+[filename, pathname] = uigetfile('*.mat');
+
+if ~filename
+    return;
+else
+    load([pathname filename],'matchstrct')
+end
+
+if ~exist(matchstrct.wavdir)
+    matchstrct.wavdir = uigetdir(pwd, 'Cannot find original directory');
+    
+    saveopt = questdlg('Save new directory informatoin?','Save prompt','Yes','No','Yes');
+    if strcmp(saveopt,'Yes')
+        load([pathname filename],'novinds')
+        if ~exist('novinds')
+            novinds = [];
+        end
+        save([pathname filename],'matchstrct','novinds')
+        clear novinds
+    end
+end
+
+flg = check_headers(matchstrct.wavdir);
+
+set(handles.load_seq_timing,'UserData',[]);
+set(handles.spec_dist,'UserData',[]);
+
+if isfield(matchstrct,'trainingfl')
+    
+    if ~exist(matchstrct.trainingfl)
+        [trainfile, trainpath] = uigetfile('*.mat','Cannot find training file');
+        matchstrct.trainingfl = [trainpath trainfile];
+        
+        saveopt = questdlg('Save new training file path?','Save prompt','Yes','No','Yes');
+        if strcmp(saveopt,'Yes')
+            load([pathname filename],'novinds')
+            save([pathname filename],'matchstrct','novinds')
+            clear novinds
+        end
+        
+        
+    end
+    
+    load(matchstrct.trainingfl);
+    
+    
+    if ~exist('templatestrct')
+        
+        if isfield(clipstrct,'templatefl')
+            load(clipstrct.templatefl)
+        else
+            [filename2,pathname2] = uigetfile('*.mat','Cannot find class templates');
+            
+            if filename2
+                load([pathname2,filename2]);
+            else
+                return;
+            end
+        end
+        
+        
+        for tempind = 1:length(templatenms)
+            eval(['templatestrct.specarr{tempind} = template' templatenms{tempind} ';'])
+        end
+        
+        templatestrct.freqinds = freqinds;
+        templatestrct.speclabs = templatenms;
+        propstrct.f_winadv = winadv;
+        propstrct.f_winlen = winlen;
+        propstrct.fs = fs;
+        
+    end
+    
+elseif isfield(matchstrct,'templatefl')
+    
+    if exist(matchstrct.templatefl)
+        load(matchstrct.templatefl);
+    else
+        [templatefile, templatepath] = uigetfile('*.mat','Cannot find template file');
+        load([templatepath templatefile])
+    end
+    
+    for tempind = 1:length(templatenms)
+        eval(['templatestrct.specarr{tempind} = template' templatenms{tempind} ';'])
+    end
+    
+    templatestrct.freqinds = freqinds;
+    templatestrct.speclabs = templatenms;
+    propstrct.f_winadv = winadv;
+    propstrct.f_winlen = winlen;
+    propstrct.fs = fs;
+    
+end
+
+templatestrct.speclabs = [templatestrct.speclabs 'x'];
+
+% xlen = round(median(matchstrct.cliplens(find(strcmp(matchstrct.cliplabs,'x')))) / (propstrct.f_winadv * 1000 / propstrct.fs));
+xlen = 15;
+templatestrct.specarr{length(templatestrct.speclabs)} = 5*rand(length(templatestrct.freqinds),xlen);
+
+propstrct2 = get(handles.template_axis,'UserData');
+propstrct2.f_winlen = propstrct.f_winlen;
+propstrct2.f_winadv = propstrct.f_winadv;
+propstrct2.fs = propstrct.fs;
+propstrct = propstrct2;
+
+set(handles.template_axis,'UserData',propstrct);
+
+plotspecstrct(handles,handles.template_axis,[],templatestrct,1000,0,'label');
+
+matchstrct.templatestrct = templatestrct;
+
+load([matchstrct.wavdir filesep 'wavdirinfo.mat']);
+matchstrct.wavnm = length(dirstrct.wavinds);
+% 
+% load([matchstrct.wavdir filesep 'clipdirinfo.mat']);
+matchstrct.clipnm = length(matchstrct.cliptms);
+
+set(handles.load_match_data,'UserData',matchstrct);
+cla(handles.timing_template_axis);
+
+set(handles.title_bar,'String',[pathname filename ' (' num2str(matchstrct.wavnm) ' wav files, ' num2str(matchstrct.clipnm) ' matches)']);
+
+sylset = ones(1,length(templatestrct.speclabs)+1);
+set(handles.exclude_syls,'UserData',sylset);
+calc_seqvc(handles);
+
+transition_matrix_Callback(0,0,handles);
+
+%--------------------------------------------------------------------------
+function generate_timing_template_Callback(hObject, eventdata, handles)
+
+matchstrct = get(handles.load_match_data,'UserData');
+propstrct = get(handles.template_axis,'UserData');
+
+load([matchstrct.wavdir filesep 'wavdirinfo.mat'])
+load(matchstrct.trainingfl,'clipstrct')
+
+propstrct.f_winlen_fn = 2^round(log2(propstrct.fs * propstrct.freqwin_fn / 1000));
+propstrct.f_winadv_fn = 2^round(log2(propstrct.fs * propstrct.timewin_fn / 1000));
+propstrct.smthbins = 2^round(log2(propstrct.smthwn / propstrct.timewin_fn));
+
+timing_templatestrct = get(handles.generate_timing_template,'UserData');
+
+if isempty(timing_templatestrct)
+    timing_templatestrct.specarr = {};
+    timing_templatestrct.speclabs = {};
+    freqs = propstrct.fs*[0:propstrct.f_winlen_fn/2]/propstrct.f_winlen_fn;
+    timing_templatestrct.freqinds = find(freqs >= propstrct.freqmin & freqs <= propstrct.freqmax);
+end
+
+[b,a] = butter(propstrct.filt_order,2*[propstrct.freqmin propstrct.freqmax]/propstrct.fs);
+
+template_selectinds = find(propstrct.selectvc);
+% trainstrct = load(matchstrct.trainingfl);
+% trainstrct = trainstrct.clipstrct;
+
+maxN = 20;
+
+for templateindind = 1:length(template_selectinds)
+    
+    templateind = template_selectinds(templateindind);
+    sylab = matchstrct.templatestrct.speclabs{templateind};
+    clipinds = find(strcmp(clipstrct.speclabs,sylab));
+    
+    clipinds = clipinds(randperm(length(clipinds)));
+    clipinds = clipinds(1:min(maxN,length(clipinds)));
+    
+    for clipind = 1:length(clipinds)
+        
+        signal = clipstrct.wavarr{clipinds(clipind)};
+        
+        spec = tdft(signal,propstrct.f_winlen_fn,propstrct.f_winadv_fn);
+        %         specarr{clipind} = log(max(spec(timing_templatestrct.freqinds,:),propstrct.amp_cutoff)) - log(propstrct.amp_cutoff);
+        specarr{clipind} = spec(timing_templatestrct.freqinds,:);
+        
+    end
+    
+    timingind = find(strcmp(timing_templatestrct.speclabs,matchstrct.templatestrct.speclabs{templateind}));
+    if isempty(timingind)
+        timingind = length(timing_templatestrct.specarr)+1;
+    end
+    timing_templatestrct.specarr{timingind} = mk_timing_template(specarr,propstrct.smthbins,matchstrct.templatestrct.speclabs{templateind});
+    timing_templatestrct.speclabs{timingind} = matchstrct.templatestrct.speclabs{templateind};
+    
+end
+
+set(handles.generate_timing_template,'UserData',timing_templatestrct);
+propstrct.f_winlen = propstrct.f_winlen_fn;
+propstrct.f_winadv = propstrct.f_winadv_fn;
+propstrct.speclabs = timing_templatestrct.speclabs;
+
+set(handles.timing_template_axis,'UserData',propstrct);
+plotspecstrct(handles,handles.timing_template_axis,[],timing_templatestrct,1000,0,'label');
+set(handles.timing_template_axis,'clim',[-.025 .025]);
+
+deselect_all_Callback(handles.template_axis);
+
+%--------------------------------------------------------------------------
+function compile_dtw_Callback(hObject, eventdata, handles)
+
+matchstrct = get(handles.load_match_data,'UserData');
+timing_propstrct = get(handles.timing_template_axis,'UserData');
+propstrct = get(handles.template_axis,'UserData');
+
+load([matchstrct.wavdir filesep 'wavdirinfo.mat']);
+
+timing_templatestrct = get(handles.generate_timing_template,'UserData');
+[b,a] = butter(propstrct.filt_order,2*[propstrct.freqmin propstrct.freqmax]/propstrct.fs);
+
+template_selectinds = find(timing_propstrct.selectvc);
+
+clipnm = length(matchstrct.cliplabs);
+
+smthbins = 2^round(log2(propstrct.smthwn / propstrct.timewin_fn));
+freqinds = timing_templatestrct.freqinds;
+pad = zeros(size(timing_templatestrct.specarr{1},1),smthbins+1);
+
+for templateindind = 1:length(template_selectinds)
+    
+    templateind = template_selectinds(templateindind);
+    templatelab = timing_templatestrct.speclabs{templateind};
+    template = timing_templatestrct.specarr{templateind};
+    
+    indstmp = find(strcmp(matchstrct.cliplabs,templatelab));
+    clipnm = length(indstmp);
+    
+    mfct = 1/2;
+    minlim = round( timing_propstrct.fs * 15 / (timing_propstrct.f_winadv * 1000));
+    
+    matnm = ceil(size(template,2)*clipnm/12500000);
+    slen = ceil(clipnm / matnm);
+    slst = rem(clipnm,slen);
+    if slst == 0
+        slst = slen;
+    end
+    
+    cliptms = matchstrct.cliptms(indstmp);
+    cliplens = matchstrct.cliplens(indstmp);
+    wavinds = matchstrct.wavinds(indstmp);
+    save([matchstrct.wavdir filesep templatelab 'warp.mat'],'cliptms','cliplens','wavinds','matnm')
+    
+    clear cliptms cliplens wavinds
+    
+    h = waitbar(0/clipnm,['Mapping syl ' templatelab ' (' num2str(clipnm) ' clips)']);
+    
+    clipind = 0;
+    
+    for matind = 1:matnm
+        
+        if matind < matnm
+            matclipnm = slen;
+        else
+            matclipnm = slst;
+        end
+        
+        stmp = zeros(matclipnm,size(template,2));
+        
+        for matclipind = 1:matclipnm
+            
+            clipind = clipind + 1;
+            
+            samp1 = ceil(matchstrct.cliptms(indstmp(clipind)) * propstrct.fs / 1000);
+            samp2 = samp1 + floor(matchstrct.cliplens(indstmp(clipind)) * propstrct.fs / 1000) - 2;
+            flnm = [matchstrct.wavdir filesep dirstrct.wavfls{matchstrct.wavinds(indstmp(clipind))}];
+            
+            s_dims = wavread(flnm,'size');
+            samp2 = min(samp2,max(s_dims));
+            
+            signal = filter(b,a,wavread(flnm,double([samp1,samp2])));
+            
+            spec = tdft(signal,timing_propstrct.f_winlen,timing_propstrct.f_winadv);
+            spec = diff(smoothVecGauss([pad spec(freqinds,:) pad],smthbins)')';
+            
+            mlim = max(minlim,round(size(spec,2)*mfct));
+            
+            w = dtwProd(template,spec,'pwt',[1.5 1.5 1],'mlim',mlim);
+            
+            [dmy,winds] = sort(w(:,1));
+            w = w(winds,:);
+            w = w(w(:,1) > 0,:);
+            
+            stmp(matclipind,w(:,1)) = w(:,2)';
+            
+            if rem(clipind,10)==0
+                h = waitbar(clipind/clipnm,h);
+            end
+            
+        end
+        
+        stmp = stmp * 1000 * timing_propstrct.f_winadv / timing_propstrct.fs;
+        
+        if matnm > 1
+            sname = ['s' num2str(matind)];
+        else
+            sname = 's';
+        end
+        
+        eval([sname ' = stmp;']);
+        save([matchstrct.wavdir filesep templatelab 'warp.mat'],sname,'-append')
+        
+    end
+    
+    close(h)
+    
+end
+
+deselect_all_Callback(handles.timing_template_axis);
+
+%--------------------------------------------------------------------------
+function save_timing_templates_Callback(hObject, eventdata, handles)
+
+[filename,filepath] = uiputfile('*.mat','Choose where to save template');
+if ~filename
+    return;
+end
+
+timing_templatestrct = get(handles.generate_timing_template,'UserData');
+
+matchstrct = get(handles.load_match_data,'UserData');
+propstrct = get(handles.timing_template_axis,'UserData');
+
+save([filepath filename],'timing_templatestrct','propstrct');
+
+% save([filepath filename],'winlen','winadv','freqinds','fs','templatenms')
+
+% for tempind = 1:length(templatenms)
+%     eval(['template' templatenms{tempind} '=timing_templatestrct.specarr{' num2str(tempind) '};'])
+%     save([filepath filename],['template' templatenms{tempind}],'-append');
+%
+%     if isfield(timing_templatestrct,'featms') & length(timing_templatestrct.featms) >= tempind
+%         eval(['featms' templatenms{tempind} '=timing_templatestrct.featms{' num2str(tempind) '};'])
+%         save([filepath filename],['featms' templatenms{tempind}],'-append');
+%     end
+%
+% end
+
+
+%--------------------------------------------------------------------------
+function load_timing_templates_Callback(hObject, eventdata, handles)
+
+[filename, pathname] = uigetfile('*.mat');
+if ~filename
+    return;
+else
+    load([pathname filename])
+end
+
+if ~exist('timing_templatestrct')
+    
+    timing_templatestrct.speclabs = templatenms;
+    timing_templatestrct.freqinds = freqinds;
+    
+    for tempind = 1:length(templatenms)
+        eval(['timing_templatestrct.specarr{tempind} = template' templatenms{tempind} ';'])
+        if exist(['featms' templatenms{tempind}])
+            eval(['timing_templatestrct.featms{' num2str(tempind) '} = featms' templatenms{tempind} ';'])
+        end
+    end
+    
+    
+    propstrct = get(handles.timing_template_axis,'UserData');
+    
+    propstrct = get(handles.timing_template_axis,'UserData');
+    propstrct.f_winlen = winlen;
+    propstrct.f_winadv = winadv;
+    propstrct.fs = fs;
+    propstrct.freqinds = freqinds;
+    
+end
+
+set(handles.generate_timing_template,'UserData',timing_templatestrct)
+set(handles.timing_template_axis,'UserData',propstrct)
+
+plotspecstrct(handles,handles.timing_template_axis,[],timing_templatestrct,1000,0,'label');
+set(handles.timing_template_axis,'clim',[-.025 .025]);
+
+
+%--------------------------------------------------------------------------
+function pick_timing_features_Callback(hObject, eventdata, handles)
+
+timing_propstrct = get(handles.timing_template_axis,'UserData');
+propstrct = get(handles.template_axis,'UserData');
+
+timing_templatestrct = get(handles.generate_timing_template,'UserData');
+template_selectind = find(timing_propstrct.selectvc);
+
+if length(template_selectind) ~= 1
+    errordlg('Choose one')
+    return;
+end
+
+template = timing_templatestrct.specarr{template_selectind};
+
+h = subplot(5,1,1:4,'Parent',handles.analysis_panel2);
+imagesc(template);
+cmax = max(abs(template(:)));
+clims = .9*[-cmax cmax];
+set(h,'ydir','normal','ytick',[],'xtick',[],'clim',clims)
+
+h2 = subplot(5,1,5,'Parent',handles.analysis_panel2);
+tempsum = sum(template);
+plot(tempsum);
+set(h2,'ytick',[],'xtick',[],'xlim',[1 length(tempsum)],'ylim',1.1*[min(tempsum) max(tempsum)])
+
+h_dcm = datacursormode(handles.mainfig);
+set(h_dcm,'Enable','on');
+set(handles.pick_timing_features,'UserData',h_dcm);
+
+
+%--------------------------------------------------------------------------
+function set_timing_features_Callback(hObject, eventdata, handles)
+
+h_dcm = get(handles.pick_timing_features,'UserData');
+strct = getCursorInfo(h_dcm);
+
+featnm = length(strct);
+
+if featnm > 0
+    featms = zeros(1,featnm);
+    for i = 1:featnm
+        featms(i) = strct(i).Position(1);
+    end
+    
+    featms = sort(featms);
+    
+    timing_propstrct = get(handles.timing_template_axis,'UserData');
+    
+    timing_templatestrct = get(handles.generate_timing_template,'UserData');
+    template_selectind = find(timing_propstrct.selectvc);
+    
+    timing_templatestrct.featms{template_selectind} = featms;
+    set(handles.generate_timing_template,'UserData',timing_templatestrct);
+    
+    plotspecstrct(handles,handles.timing_template_axis,[],timing_templatestrct,1000,0,'label');
+    set(handles.timing_template_axis,'clim',[-.025 .025]);
+end
+
+set(h_dcm,'Enable','off');
+deselect_all_Callback(handles.timing_template_axis);
+
+
+%--------------------------------------------------------------------------
+function load_seq_timing_Callback(hObject, eventdata, handles)
+
+seqstrct = get(handles.compile_sequences,'UserData');
+propstrct = get(get(handles.analysis_panel,'Children'),'UserData');
+matchstrct = get(handles.load_match_data,'UserData');
+
+timing_templatestrct = get(handles.generate_timing_template,'UserData');
+
+if isempty(timing_templatestrct)
+    errordlg('Please load associated timing templates first');
+    return;
+end
+
+
+timing_propstrct = get(handles.timing_template_axis,'UserData');
+
+seqind = find(propstrct.selectvc);
+seq = seqstrct.seqs{seqind};
+seqvc = zeros(1,length(seq));
+
+for i = 1:length(seq)
+    featms{i} = timing_templatestrct.featms{find(strcmp(seq{i},timing_templatestrct.speclabs))};
+    seqvc(i) = find(strcmp(seq{i},seqstrct.labsu));
+end
+
+timing_strct = get_seq_timing(seq,seqvc,featms,seqstrct,matchstrct.wavdir);
+timing_strct.wavinds = seqstrct.wavinds(timing_strct.seqinds);
+set(handles.load_seq_timing,'UserData',timing_strct)
+
+plot_seq_timing_Callback(0, 0, handles);
+
+%--------------------------------------------------------------------------
+function plot_seq_timing_Callback(hObject, eventdata, handles)
+
+timing_strct = get(handles.load_seq_timing,'UserData');
+
+lens = timing_strct.lenseq;
+seq = timing_strct.seqarr;
+seqlen = length(seq);
+seq(find(timing_strct.sg==0)) = {''};
+
+
+% lens = cleanInts(lens,5,1);
+
+h = zeros(1,3);
+
+h(1) = subplot(3,1,1,'Parent',handles.analysis_panel);
+
+plot(mean(lens),'-o')
+title(['mean len / N = ' num2str(size(lens,1))])
+
+h(2) = subplot(3,1,2,'Parent',handles.analysis_panel);
+plot(std(lens),'-o')
+title('std len')
+
+h(3) = subplot(3,1,3,'Parent',handles.analysis_panel);
+plot(100*cv(lens),'-o')
+title('cv len')
+
+for i = 1:length(h)
+    set(h(i),'xtick',1:seqlen,'xlim',[.5 seqlen+.5],'xticklabel',[],'fontsize',8,'box','off')
+end
+
+set(h(end),'xticklabel',seq);
+
+h = [0 0];
+h(1) = subplot(2,5,2:4,'Parent',handles.analysis_panel2);
+C = cov(lens);
+clims = [prctile(C(:),10) prctile(C(:),90)];
+
+imagesc(C,clims)
+
+colorbar('EastOutside')
+title('covariance')
+
+h(2) = subplot(2,5,[2:4]+5,'Parent',handles.analysis_panel2);
+imagesc(corrcoef(lens),[-.75 .75])
+colorbar('EastOutside')
+
+g = calculateG(lens);
+g = round(g*100)/100;
+
+title(['correlation (g = ' num2str(g) ')'])
+
+for i = 1:2
+    set(h(i),'ydir','normal','xtick',1:seqlen,'ytick',1:seqlen,'xticklabel',seq,'yticklabel',seq,'box','off','fontsize',8)
+end
+%
+% figure
+% plotmatrix(lens);
+
+%--------------------------------------------------------------------------
+function factor_analysis_Callback(hObject, eventdata, handles)
+
+timing_strct = get(handles.load_seq_timing,'UserData');
+
+lens = timing_strct.lenseq;
+seq = timing_strct.seqarr;
+seqlen = length(seq);
+
+
+lens = cleanInts(lens,5,1);
+
+
+Q = mkQmat(seq);
+
+m = str2double(get(handles.fa_m,'String'));
+
+[W,psi,phi,sigma,omega,iter,n_fail,logp] = CFAfull_spc_waitbar(lens,Q,100,m);
+
+bic = round(-2 * logp + log(size(lens,1)) * (numel(W)+numel(psi)+numel(phi)+numel(sigma)));
+
+W = rotate_maxaccum(W);
+
+h = zeros(1,5);
+seq(find(timing_strct.sg==0)) = {''};
+
+% ymax = 1.1*max(max(W),max(sqrt(psi)));
+% ymax2 = 1.1*max(max(W'./mean(lens)),max(sqrt(psi')./mean(lens)));
+
+htmp = subplot(1,1,1,'Parent',handles.analysis_panel);
+
+h(1) = subplot(4,2,1,'Parent',handles.analysis_panel);
+plot(W,'-o')
+ylabel('global noise')
+title(['bic=' num2str(bic)]);
+
+h(2) = subplot(4,2,3,'Parent',handles.analysis_panel);
+plot(sqrt(psi),'-o')
+ylabel('fast noise')
+
+
+h(3) = subplot(4,2,5,'Parent',handles.analysis_panel);
+plot(sqrt(diag(Q*diag(phi)*Q'))','-o')
+ylabel('slow noise')
+
+h(4) = subplot(4,2,2,'Parent',handles.analysis_panel);
+plot(W ./ repmat(mean(lens)',1,m),'-o')
+ylabel('global elat.')
+% ylim([0 ymax2])
+
+h(5) = subplot(4,2,4,'Parent',handles.analysis_panel);
+plot(sqrt(psi') ./ mean(lens),'-o')
+ylabel('fast elat.')
+% ylim([0 ymax2])
+
+h(6) = subplot(4,2,6,'Parent',handles.analysis_panel);
+plot(sqrt(diag(Q*diag(phi)*Q'))' ./ mean(lens),'-o')
+ylabel('slow elat.')
+
+
+D = -diff(eye(seqlen))';
+
+h(7) = subplot(4,2,7,'Parent',handles.analysis_panel);
+plot(sqrt(sigma),'-o')
+ylabel('jitter')
+
+% h(8) = subplot(4,2,8,'Parent',handles.analysis_panel);
+% plot(sqrt(sigma')./ mean(lens),'-o')
+% ylabel('jitter cv')
+
+
+for i = 1:length(h)
+    %     ytmp = get(get(h(i),'Children'),'YData');
+    %     if min(ytmp) ~= max(ytmp)
+    %         ylims = [min(ytmp) max(ytmp)]+.1*[-1 1]*(max(ytmp)-min(ytmp));
+    %         ylims(1) = min(ylims(1),0);
+    %         set(h(i),'ylim',ylims)
+    %     end
+    
+    set(h(i),'xtick',1:seqlen,'xlim',[.5 seqlen+.5],'xticklabel',seq,'box','off','fontsize',6)
+end
+
+% set(h(7),'xticklabel',seq);
+% set(h(8),'xticklabel',seq);
+
+h = [0 0];
+h(1) = subplot(2,5,2:4,'Parent',handles.analysis_panel2);
+C = cov(lens);
+clims = [prctile(C(:),10) prctile(C(:),90)];
+
+imagesc(C,clims)
+colorbar('EastOutside')
+title('covariance')
+
+covhat = W*W' + diag(psi) + D*diag(sigma)*D' + Q*diag(phi)*Q';
+
+h(2) = subplot(2,5,[2:4]+5,'Parent',handles.analysis_panel2);
+imagesc(covhat,clims)
+title('model covariance')
+set(h(2),'clim',get(h(1),'clim'));
+colorbar('EastOutside')
+
+for i = 1:2
+    set(h(i),'ydir','normal','xtick',1:seqlen,'ytick',1:seqlen,'xticklabel',seq,'yticklabel',seq)
+end
+
+
+timing_strct.fa.W = W;
+timing_strct.fa.psi = psi;
+timing_strct.fa.phi = phi;
+timing_strct.fa.sigma = sigma;
+timing_strct.fa.logp = logp;
+timing_strct.fa.n_fail = n_fail;
+timing_strct.fa.m = m;
+
+set(handles.load_seq_timing,'UserData',timing_strct);
+
+%--------------------------------------------------------------------------
+function pick_spec_features_Callback(hObject, eventdata, handles)
+
+propstrct = get(handles.template_axis,'UserData');
+template_selectind = find(propstrct.selectvc);
+
+
+matchstrct = get(handles.load_match_data,'UserData');
+templatestrct = matchstrct.templatestrct;
+
+if length(template_selectind) ~= 1
+    errordlg('Choose one')
+    return;
+end
+
+template = templatestrct.specarr{template_selectind};
+
+h = subplot(5,1,1:4,'Parent',handles.analysis_panel2);
+imagesc(template);
+cmax = max(abs(template(:)));
+clims = .9*[0 cmax];
+set(h,'ydir','normal','ytick',[],'xtick',[],'clim',clims)
+
+h2 = subplot(5,1,5,'Parent',handles.analysis_panel2);
+tempsum = sum(template);
+plot(tempsum);
+set(h2,'ytick',[],'xtick',[],'xlim',[1 length(tempsum)],'ylim',1.1*[min(tempsum) max(tempsum)])
+
+h_dcm = datacursormode(handles.mainfig);
+set(h_dcm,'Enable','on');
+set(handles.pick_spec_features,'UserData',h_dcm);
+
+
+
+%--------------------------------------------------------------------------
+function set_spec_features_Callback(hObject, eventdata, handles)
+
+h_dcm = get(handles.pick_spec_features,'UserData');
+strct = getCursorInfo(h_dcm);
+
+featnm = length(strct);
+
+if featnm > 0
+    featms = zeros(1,featnm);
+    for i = 1:featnm
+        featms(i) = strct(i).Position(1);
+    end
+    
+    featms = sort(featms);
+    
+    propstrct = get(handles.template_axis,'UserData');
+    
+    matchstrct = get(handles.load_match_data,'UserData');
+    templatestrct = matchstrct.templatestrct;
+    
+    template_selectind = find(propstrct.selectvc);
+    
+    templatestrct.featms{template_selectind} = featms;
+    
+    matchstrct.templatestrct = templatestrct;
+    set(handles.load_match_data,'UserData',matchstrct);
+    
+    plotspecstrct(handles,handles.template_axis,[],templatestrct,1000,0,'label');
+end
+
+set(h_dcm,'Enable','off');
+deselect_all_Callback(handles.template_axis);
+
+
+% make sure to save, and plot boundaries in correct window
+
+%--------------------------------------------------------------------------
+function spec_dist_Callback(hObject, eventdata, handles)
+
+
+propstrct = get(handles.template_axis,'UserData');
+template_selectinds = find(propstrct.selectvc);
+
+
+matchstrct = get(handles.load_match_data,'UserData');
+
+load([matchstrct.wavdir filesep 'wavdirinfo.mat']);
+
+templatestrct = matchstrct.templatestrct;
+[b,a] = butter(propstrct.filt_order,2*[propstrct.freqmin propstrct.freqmax]/propstrct.fs);
+
+clipnm = length(matchstrct.cliplabs);
+
+N = str2num(get(handles.N,'String'));
+
+distrct = get(handles.spec_dist,'UserData');
+
+
+if isempty(distrct)
+    distrct.distarr = {};
+    distrct.spalgnarr = {};
+    distrct.madvc = zeros(length(templatestrct.speclabs),1)+NaN;
+    distrct.speclabs = templatestrct.speclabs;
+end
+
+distarr = distrct.distarr;
+madvc = distrct.madvc;
+spalgnarr = distrct.spalgnarr;
+
+for templateindind = 1:length(template_selectinds)
+    
+    templateind = template_selectinds(templateindind);
+    templatelab = templatestrct.speclabs{templateind};
+    template = templatestrct.specarr{templateind};
+    
+    if templateind>length(templatestrct.featms) || isempty(templatestrct.featms{templateind})
+       errordlg('Please choose onset and offset first') 
+       break;
+    end
+    
+    featms = templatestrct.featms{templateind};
+    indOn = featms(1);
+    indOff = featms(2);
+    
+    indstmp = find(strcmp(matchstrct.cliplabs,templatelab));
+    clipnm = length(indstmp);
+    
+    N = min(N,clipnm);
+    
+    sampleinds = randperm(clipnm);
+    sampleinds = sampleinds(1:N);
+    
+    distarr{templateind} = zeros(N,1);
+    
+    specarrtmp = {};
+   
+    for sampleind = 1:N
+        
+        clipind = sampleinds(sampleind);
+        
+        samp1 = ceil(matchstrct.cliptms(indstmp(clipind)) * propstrct.fs / 1000);
+        samp2 = samp1 + floor(matchstrct.cliplens(indstmp(clipind)) * propstrct.fs / 1000) - 2;
+        flnm = [matchstrct.wavdir filesep dirstrct.wavfls{matchstrct.wavinds(indstmp(clipind))}];
+        
+        s_dim = wavread(flnm,'size');        
+        samp2 = min(samp2,max(s_dim));
+        
+        signal = filter(b,a,wavread(flnm,double([samp1,samp2])));
+        
+        spec = tdft(signal,propstrct.f_winlen,propstrct.f_winadv);
+        spec = log(max(spec,propstrct.amp_cutoff))-log(propstrct.amp_cutoff);
+        specarrtmp{sampleind} = spec(templatestrct.freqinds,:);
+    end
+    
+    [spmn,spstd,spalgn] = mk_spec_template(specarrtmp,templatelab);
+%     
+%     spmn = squeeze(mean(spalgn));
+%         
+    w=dtwDist(template,spmn,[1.5 1.5 1]);
+    
+    [dmy,indOnind] = min(abs(w(:,1)-indOn));
+    [dmy,indOffind] = min(abs(w(:,1)-indOff));
+    
+    indOn = w(indOnind,2);
+    indOnff = w(indOffind,2);
+    
+    spmn = spmn(:,indOn:indOff);
+    spalgn = spalgn(:,:,indOn:indOff);
+    
+    distmat = spalgn - shiftdim(repmat(spmn,[1,1,N]),2);
+%     distarr{templateind} = sqrt(sum(sum(distmat.^2,2),3)/numel(spmn));
+%     distarr{templateind} = sum(sum(abs(distmat),2),3)/numel(spmn);
+    distarr{templateind} = (sum(sum(distmat.^2,2),3)/numel(spmn));
+ 
+    htmp = subplot(length(template_selectinds),1,templateindind,'Parent',handles.analysis_panel2);
+    hist(distarr{templateind},0:.1:3);
+    
+%     madval = median(distarr{templateind});
+    madval = mean(distarr{templateind});
+    
+    madvc(templateind) = madval;
+    
+    spalgnarr{templateind} = spalgn;
+    
+    xlim([0 3]);
+    title([templatelab, ' (mad = ' num2str(round(1000*madval)/1000) ')'])
+    
+    if templateindind==length(template_selectinds)
+        xlabel('abs. distance from mean')
+    end
+    
+    
+end
+
+deselect_all_Callback(handles.template_axis);
+
+distrct.distarr = distarr;
+distrct.madvc = madvc;
+distrct.spalgnarr = spalgnarr;
+
+set(handles.spec_dist,'UserData',distrct);
+
+%--------------------------------------------------------------------------
+function export_sequence_data_Callback(hObject, eventdata, handles)
+
+seq_strct = get(handles.compile_sequences,'UserData');
+seq_strct.max_gap = str2num(get(handles.max_gap,'String'));
+saveanalysis(seq_strct);
+
+%--------------------------------------------------------------------------
+function export_transition_data_Callback(hObject, eventdata, handles)
+
+trans_strct = get(handles.transition_matrix,'UserData');
+trans_strct.max_gap = str2num(get(handles.max_gap,'String'));
+saveanalysis(trans_strct);
+
+%--------------------------------------------------------------------------
+function export_timing_data_Callback(hObject, eventdata, handles)
+
+timing_strct = get(handles.load_seq_timing,'UserData');
+saveanalysis(timing_strct);
+
+
+%--------------------------------------------------------------------------
+function export_spectral_data_Callback(hObject, eventdata, handles)
+
+spec_strct = get(handles.spec_dist,'UserData');
+saveanalysis(spec_strct);
+
+
+
+%--------------------------------------------------------------------------
+function save_spectral_templates_Callback(hObject, eventdata, handles)
+
+matchstrct = get(handles.load_match_data,'UserData');
+templatestrct = matchstrct.templatestrct;
+templatestrct.specarr = templatestrct.specarr(1:end-1);
+templatestrct.speclabs = templatestrct.speclabs(1:end-1);
+
+save(matchstrct.trainingfl,'-append','templatestrct');
+
+
+
+
+
+
+%--------------------------------------------------------------------------
+function seq_timing_Callback(hObject, eventdata, handles)
+
+
+seqstrct = get(handles.compile_sequences,'UserData');
+propstrct = get(get(handles.analysis_panel,'Children'),'UserData');
+matchstrct = get(handles.load_match_data,'UserData');
+
+templatestrct = get(handles.generate_timing_template,'UserData');
+
+timing_propstrct = get(handles.timing_template_axis,'UserData');
+
+N = str2num(get(handles.N_timing,'String'));
+
+load([matchstrct.wavdir filesep 'wavdirinfo.mat'])
+
+seqind = find(propstrct.selectvc);
+seq = seqstrct.seqs{seqind};
+seqvc = zeros(1,length(seq));
+
+for i = 1:length(seq)
+    seqvc(i) = find(strcmp(seq{i},seqstrct.labsu));
+end
+
+timing_strct = get_seq_timing2(seq,seqvc,templatestrct,seqstrct,matchstrct.wavdir,N,timing_propstrct,dirstrct);
+timing_strct.wavinds = seqstrct.wavinds(timing_strct.seqinds);
+set(handles.load_seq_timing,'UserData',timing_strct)
+
+plot_seq_timing_Callback(0, 0, handles);

@@ -1,0 +1,26 @@
+function h = day_division(wavdir,timesource)
+
+if nargin==0
+    wavdir = uigetdir(userpath,'pick directory');
+end
+
+if exist([wavdir 'wavdirinfo.mat'],'file')
+    load([wavdir 'wavdirinfo.mat'])
+else
+    dirstrct = mk_wavdirinfo(wavdir);
+end
+
+for dayind = 1:length(dirstrct.dayset)
+    
+    dayinds = find(dirstrct.daynums==dirstrct.dayset(dayind));
+    dirnew = [wavdir 'day' num2str(dayind) '\'];
+    
+    for flind = 1:length(dayinds)
+        orgfile = [wavdir dirstrct.wavfls{dayind}];
+        newfile = [dirnew dirstrct.wavfls{dayind}];
+        
+        flg = movefile(wavdir,dirnew);
+        
+    end
+    
+end

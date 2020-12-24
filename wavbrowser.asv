@@ -1,0 +1,577 @@
+function varargout = wavbrowser(varargin)
+
+h_mainfig = wavbrowser_mainfig();
+
+handles = guihandles(h_mainfig);
+
+handlenms = fieldnames(handles);
+
+set(handles.go_to,'Callback','1');
+
+for i = 1:length(handlenms)
+    h = getfield(handles,handlenms{i});
+    if isfield(get(h),'Callback') & strcmp(get(h,'Callback'),'1')
+        eval(['set(h,''Callback'',','{@' get(h,'Tag') '_Callback,handles});'])
+    end
+        
+end
+
+wavstrct = ABconfig;
+set(handles.mainfig,'UserData',wavstrct);
+
+hcolor(handles);
+
+% --- Executes on button press in load_wav_dir.
+function load_wav_dir_Callback(hObject, eventdata, handles)
+% hObject    handle to load_wav_dir (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+wavdir = uigetdir(userpath,'pick directory');
+
+if wavdir
+    if ~(exist([wavdir filesep 'clipdirinfo.mat']) | exist([wavdir filesep 'wavdirinfo.mat']))
+        button = questdlg('No header files, make them?');
+        if strcmp(button,'Yes')
+            dirstrct = mk_wavdirinfo(wavdir);
+        else
+            return;
+        end
+    else
+        
+        check_headers(wavdir);
+        load([wavdir filesep 'wavdirinfo.mat'])
+        
+    end
+    
+    dirstrct.wavind = 1;
+    dirstrct.daytms = dirstrct.daytms + 100*rand(1,length(dirstrct.daytms))/(24*60*60*1000);
+    dirstrct.wavdir = wavdir;
+    
+    set(handles.load_wav_dir,'UserData',dirstrct);
+    
+    plotdir(handles);
+else
+    return;
+end
+
+% --- Executes on button press in prev.
+function prev_Callback(hObject, eventdata, handles)
+% hObject    handle to prev (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+propstrct = get(handles.daytime_axis,'UserData');
+
+tm = dirstrct.daytms(dirstrct.wavind);
+ind = find(dirstrct.daytms(propstrct.dayinds) == tm);
+
+if ind > 1
+    tmpick(propstrct.h_tms(ind-1),[],handles);
+else
+    errordlg('Beginning of day')
+end
+
+
+% --- Executes on button press in next.
+function next_Callback(hObject, eventdata, handles)
+% hObject    handle to next (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+propstrct = get(handles.daytime_axis,'UserData');
+
+tm = dirstrct.daytms(dirstrct.wavind);
+ind = find(dirstrct.daytms(propstrct.dayinds) == tm);
+
+if ind < length(propstrct.h_tms)
+    tmpick(propstrct.h_tms(ind+1),[],handles);
+else
+    errordlg('End of day')
+end
+
+% --- Executes on button press in play.
+function play_Callback(hObject, eventdata, handles)
+% hObject    handle to play (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+xlims = get(handles.spectrogram,'xlim');
+wavstrct = get(handles.mainfig,'UserData');
+
+ind0 = max(1,round(xlims(1)*wavstrct.fs/1000));
+indend = min(length(wavstrct.signal),round(xlims(2)*wavstrct.fs/1000));
+
+signal = wavstrct.signal(ind0:indend);
+
+slow_fact = str2double(get(handles.slow_factor,'String'));
+if slow_fact ~= 1
+    signal = pvoc(signal, 1/slow_fact, wavstrct.winlen);
+end
+
+soundsc(signal,wavstrct.fs)
+
+% --- Executes on button press in extract.
+function extract_Callback(hObject, eventdata, handles)
+% hObject    handle to extract (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+xlims = get(handles.spectrogram,'xlim');
+wavstrct = get(handles.mainfig,'UserData');
+
+ind0 = max(1,round(xlims(1)*wavstrct.fs/1000));
+indend = min(length(wavstrct.signal),round(xlims(2)*wavstrct.fs/1000));
+
+[FileName,PathName] = uiputfile('*.wav','Name file');
+
+if FileName
+    wavwrite(wavstrct.signal(ind0:indend),wavstrct.fs,[PathName,FileName]);
+end
+
+% --- Executes on button press in extract.
+function plot_spec_labs_Callback(hObject, eventdata, handles)
+% hObject    handle to extract (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+wavstrct = get(handles.mainfig,'UserData');
+matchstrct = get(handles.load_matches,'UserData');
+templatestrct = get(handles.load_templates,'UserData');
+
+figure
+hlab = subplot(7,1,1);
+hspec = subplot(7,1,2:7);
+
+t = wavstrct.dt*[0:size(wavstrct.spec,2)-1];
+
+set(gcf,'CurrentAxes',hspec);
+imagesc(t,wavstrct.freqs,wavstrct.spec);
+set(hspec,'ydir','normal','tag','spectrogram')
+
+if ~isempty(matchstrct)   
+
+    inds = find(matchstrct.wavinds == dirstrct.wavind);
+    cliptms = matchstrct.cliptms(inds);
+    cliplens = matchstrct.cliplens(inds);
+    cliplabs = matchstrct.cliplabs(inds);
+%     clipscrs = matchstrct.clipscrs(inds);
+    clipnm = length(inds);
+    
+else
+    config_strct = ABconfig;
+    
+%     config_strct.clip_amp_cutoff = 0.001;
+%     
+    winlen = 2^round(log2(wavstrct.fs*config_strct.ampwin/1000));
+    winadv = winlen;
+    amps = ampwav(wavstrct.signal,winlen,winadv);
+    logthresh = config_strct.clip_amp_cutoff/winlen;
+    amps = log(max(amps,logthresh)) - log(logthresh);
+    amps = amps / max(amps);
+    gap_thresh = config_strct.gap_thresh * wavstrct.fs / 1000;
+    
+    minsamps = floor(config_strct.clip_minlen * wavstrct.fs / 1000);
+    maxsamps = ceil(config_strct.clip_maxlen * wavstrct.fs / 1000);
+    
+    [clipsamps,clipons,amps] = wav2clips(wavstrct.signal,winlen,...
+        winadv,config_strct.amp_thresh,gap_thresh,config_strct.normopt,config_strct.logopt,logthresh,minsamps,maxsamps);
+    
+    cliptms = 1000 * clipons / wavstrct.fs;
+    cliplens = 1000 * clipsamps / wavstrct.fs;
+    
+    inds = find(cliplens >= config_strct.clip_minlen & cliplens <= config_strct.clip_maxlen);
+    cliptms = cliptms(inds);
+    cliplens = cliplens(inds);
+    
+    clipnm = length(cliplens);
+    cliplabs = repmat({'x'},1,clipnm);
+end
+    
+set(gcf,'CurrentAxes',hlab);
+hold on
+
+for clipind = 1:clipnm
+    xval1 = cliptms(clipind);
+    xval2 = cliptms(clipind)+cliplens(clipind);
+    
+    %         plot([xval1;xval2],[0;0],'k-','linewidth',2);
+    %
+    patch([xval1;xval2;xval2;xval1],[1;1;0;0],'k')
+    
+    xpos = .5*(xval1+xval2);
+    posvc = [xpos 1 0];
+    htmp = text(0,1,cliplabs(clipind),'HorizontalAlignment','center','VerticalAlignment','bottom');
+    set(htmp,'Position',posvc);
+end
+
+ylim([0 2])
+xlim([t(1) t(end)])
+
+set(hspec,'Box','off','TickLength',[0 0])
+set(hlab,'Box','off','TickLength',[0 0],'xtick',[],'ytick',[])
+
+% --- Executes on button press in load_templates.
+function load_templates_Callback(hObject, eventdata, handles)
+% hObject    handle to load_templates (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+[flnm,flpth] = uigetfile('*.mat','Choose match data file');
+filename = [flpth flnm];
+if ~filename
+    return;
+else
+    load(filename)
+end
+
+for i = 1:length(templatenms)
+    eval(['templatestrct.templates{' num2str(i) '} = template' templatenms{i} ';']);
+end
+
+templatestrct.templatenms = templatenms;
+templatestrct.freqinds = freqinds;
+
+set(handles.load_templates,'UserData',templatestrct);
+plotwav(handles);
+
+% htmp = get(handles.feature,'Title');
+% set(htmp,'Interpreter','none','String',filename,'FontSize',10,'Clipping','off');
+
+% --- Executes on button press in load_matches.
+function load_matches_Callback(hObject, eventdata, handles)
+% hObject    handle to load_matches (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+[flnm,flpth] = uigetfile('*.mat','Choose match data file');
+filename = [flpth flnm];
+if ~filename
+    return;
+else
+    load(filename)
+end
+
+set(handles.load_matches,'UserData',matchstrct);
+plotwav(handles);
+
+
+%--------------------------------------------------------------------------
+function getwav(handles)
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+fl = [dirstrct.wavdir filesep dirstrct.wavfls{dirstrct.wavind}];
+
+wavstrct = get(handles.mainfig,'UserData');
+
+[wavstrct.signal,wavstrct.fs] = wavread(fl);
+
+cutoff_freq = [wavstrct.freqmin wavstrct.freqmax]/(wavstrct.fs/2);
+[b,a] = butter(wavstrct.filt_order,cutoff_freq);
+
+wavstrct.winlen = 2^round(log2(wavstrct.fs * wavstrct.freqwin / 1000));
+wavstrct.winadv = 2^round(log2(wavstrct.fs * wavstrct.timewin / 1000));
+
+wavstrct.freqs = [0:wavstrct.winlen/2-1] * wavstrct.fs / wavstrct.winlen;
+freqinds = find(wavstrct.freqs >= wavstrct.freqmin & wavstrct.freqs <= wavstrct.freqmax);
+wavstrct.freqs = wavstrct.freqs(freqinds);
+wavstrct.dt = 1000*wavstrct.winadv/wavstrct.fs;
+wavstrct.dw = wavstrct.fs/wavstrct.winlen;
+
+
+if size(wavstrct.signal,2)>1
+   pwr = sum(wavstrct.signal.^2);
+   wavstrct.signal = wavstrct.signal(:,(diff(pwr)>0)+1);
+end
+
+wavstrct.signal = filter(b,a,wavstrct.signal);
+
+% wavstrct.amp_cutoff = .002;
+
+spec = tdft(wavstrct.signal,wavstrct.winlen,wavstrct.winadv);
+wavstrct.spec = log(max(spec(freqinds,:),wavstrct.amp_cutoff))-log(wavstrct.amp_cutoff);
+
+set(handles.mainfig,'UserData',wavstrct);
+
+
+
+%--------------------------------------------------------------------------
+function plotwav(handles,xlims)
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+wavstrct = get(handles.mainfig,'UserData');
+matchstrct = get(handles.load_matches,'UserData');
+templatestrct = get(handles.load_templates,'UserData');
+
+set(handles.mainfig,'CurrentAxes',handles.spectrogram);
+
+t = wavstrct.dt*[0:size(wavstrct.spec,2)-1];
+
+imagesc(t,wavstrct.freqs,wavstrct.spec);
+set(gca,'ydir','normal','tag','spectrogram')
+
+if nargin == 2
+    xlim(xlims);
+end
+
+zoom reset
+
+set(handles.mainfig,'CurrentAxes',handles.match_axis);
+cla(handles.match_axis)
+
+if ~isempty(matchstrct)   
+
+    inds = find(matchstrct.wavinds == dirstrct.wavind);
+    cliptms = matchstrct.cliptms(inds);
+    cliplens = matchstrct.cliplens(inds);
+    cliplabs = matchstrct.cliplabs(inds);
+%     clipscrs = matchstrct.clipscrs(inds);
+    clipnm = length(inds);
+    
+else
+    config_strct = ABconfig;
+    
+%     config_strct.clip_amp_cutoff = 0.001;
+%     
+    winlen = 2^round(log2(wavstrct.fs*config_strct.ampwin/1000));
+    winadv = winlen;
+    amps = ampwav(wavstrct.signal,winlen,winadv);
+    logthresh = config_strct.clip_amp_cutoff/winlen;
+    amps = log(max(amps,logthresh)) - log(logthresh);
+    amps = amps / max(amps);
+    gap_thresh = config_strct.gap_thresh * wavstrct.fs / 1000;
+    
+    minsamps = floor(config_strct.clip_minlen * wavstrct.fs / 1000);
+    maxsamps = ceil(config_strct.clip_maxlen * wavstrct.fs / 1000);
+    
+    [clipsamps,clipons,amps] = wav2clips(wavstrct.signal,winlen,...
+        winadv,config_strct.amp_thresh,gap_thresh,config_strct.normopt,config_strct.logopt,logthresh,minsamps,maxsamps);
+    
+    cliptms = 1000 * clipons / wavstrct.fs;
+    cliplens = 1000 * clipsamps / wavstrct.fs;
+    
+    inds = find(cliplens >= config_strct.clip_minlen & cliplens <= config_strct.clip_maxlen);
+    cliptms = cliptms(inds);
+    cliplens = cliplens(inds);
+    
+    clipnm = length(cliplens);
+    cliplabs = repmat({'x'},1,clipnm);
+end
+    
+hold on
+
+for clipind = 1:clipnm
+    xval1 = cliptms(clipind);
+    xval2 = cliptms(clipind)+cliplens(clipind);
+    
+    %         plot([xval1;xval2],[0;0],'k-','linewidth',2);
+    %
+    patch([xval1;xval2;xval2;xval1],[1;1;0;0],'k')
+    
+    xpos = .5*(xval1+xval2);
+    posvc = [xpos 1 0];
+    htmp = text(0,1,cliplabs(clipind),'HorizontalAlignment','center','VerticalAlignment','bottom');
+    set(htmp,'Position',posvc);
+end
+
+ylim([0 2])
+
+
+xlim(get(handles.spectrogram,'xlim'));
+zoom reset
+
+set(handles.mainfig,'CurrentAxes',handles.feature);
+
+if ~isempty(templatestrct)
+    
+    wavstrct.matchmat = zeros(length(templatestrct.templates),size(wavstrct.spec,2));
+    
+    for i = 1:length(templatestrct.templates)
+        c = matchTemplate(templatestrct.templates{i},wavstrct.spec);
+        wavstrct.matchmat(i,1:length(c)) = c;
+    end
+    
+    plot([0:length(wavstrct.matchmat)-1]*wavstrct.dt,wavstrct.matchmat');
+    legend(templatestrct.templatenms);
+
+else
+
+   config_strct = ABconfig;
+   winlen = 2^round(log2(wavstrct.fs*config_strct.ampwin/1000));
+   winadv = winlen;
+   amps = ampwav(wavstrct.signal,winlen,winadv);
+   logthresh = config_strct.clip_amp_cutoff/winlen;
+   amps = log(max(amps,logthresh)) - log(logthresh);
+   amps = amps / max(amps);
+   
+   cla(handles.feature)
+   
+   ampdt = 1000 * winlen / wavstrct.fs;
+   plot([0:length(amps)-1]*ampdt,amps);
+   hold on
+   plot([0 length(amps)]*wavstrct.dt,[config_strct.amp_thresh config_strct.amp_thresh],'k--');
+   
+   ylim([0 1]);
+%    [sampstmp,onstmp] = ...
+%         wav2clips(s,winlen,winadv,config_strct.amp_thresh,gap_thresh,config_strct.normopt,config_strct.logopt,logthresh,minsamps);
+  
+end
+
+set(handles.feature,'Box','off','TickLength',[0 0])
+set(handles.spectrogram,'Box','off','TickLength',[0 0])
+
+fl = [dirstrct.wavdir filesep dirstrct.wavfls{dirstrct.wavind}];
+
+set(handles.title_bar,'String',fl);
+
+xlim(get(handles.spectrogram,'xlim'));
+
+zoom reset
+zoom_mode_Callback(handles.zoom_mode, [], handles);
+
+
+function go_to_Callback(hObject, eventdata, handles)
+% hObject    handle to go_to (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of go_to as text
+%        str2double(get(hObject,'String')) returns contents of go_to as a double
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+dirstrct.wavind = str2double(get(hObject,'String'));
+
+dy_propstrct = get(handles.day_axis,'UserData');
+
+dy = dirstrct.daynums(dirstrct.wavind);
+dyind = find(dirstrct.dayset == dy);
+
+daypick(dy_propstrct.h_days(dyind),[],handles);
+
+tm_propstrct = get(handles.daytime_axis,'UserData');
+tm = dirstrct.daytms(dirstrct.wavind);
+tmind = find(dirstrct.daytms(tm_propstrct.dayinds) == tm);
+
+tmpick(tm_propstrct.h_tms(tmind),[],handles);
+
+
+
+%--------------------------------------------------------------------------
+function plotdir(handles)
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+cla(handles.day_axis);
+set(handles.mainfig,'CurrentAxes',handles.day_axis)
+
+propstrct.h_days = plot([dirstrct.dayset;dirstrct.dayset],[0 1],'b','linewidth',1.5);
+datetick('x',2)
+set(gca,'ytick',[],'xlim',[min(dirstrct.dayset)-2 max(dirstrct.dayset)+2],'tag','day_axis','box','off','TickLength',[0 0])
+
+for dayind = 1:length(propstrct.h_days)
+    set(propstrct.h_days(dayind),'ButtonDownFcn',{@daypick,handles},'UserData',dayind);
+end
+
+set(handles.day_axis,'UserData',propstrct)
+% set(handles.title_bar,'String',dirstrct.wavdir);
+daypick(propstrct.h_days(1),[],handles);
+
+%--------------------------------------------------------------------------
+function varargout = daypick(hObject, eventdata, handles)
+
+propstrct = get(get(hObject,'Parent'),'UserData');
+id = get(hObject,'UserData');
+
+for i = 1:length(propstrct.h_days)
+    set(propstrct.h_days(i),'Color','b','linewidth',2)
+end
+set(hObject,'Color','r','linewidth',3);
+dirstrct = get(handles.load_wav_dir,'UserData');
+
+propstrct.dayinds = find(dirstrct.daynums==dirstrct.dayset(id));
+dirstrct.wavind = propstrct.dayinds(1);
+
+set(handles.load_wav_dir,'UserData',dirstrct);
+% getwav(handles);
+% plotwav(handles);
+
+set(handles.go_to,'String',num2str(dirstrct.wavind));
+set(handles.mainfig,'CurrentAxes',handles.daytime_axis);
+
+tms = dirstrct.daytms(propstrct.dayinds) - floor(dirstrct.daytms(propstrct.dayinds(1)));
+
+% hr1 = min([6 / 24 tms]);
+% hr2 = max([21 / 24 tms]);
+
+hr1 = 0;
+hr2 = 1;
+
+propstrct.h_tms = plot([tms;tms],[0 1],'g','linewidth',1.5);
+set(gca,'ytick',[],'fontsize',10,'xlim',[hr1 hr2],'tag','daytime_axis','box','off','TickLength',[0 0])
+datetick('x',15,'keeplimits')
+
+for tmind = 1:length(propstrct.h_tms)
+    set(propstrct.h_tms(tmind),'ButtonDownFcn',{@tmpick,handles},'UserData',tmind);
+end
+
+set(handles.daytime_axis,'UserData',propstrct)
+tmpick(propstrct.h_tms(1),[],handles);
+
+%--------------------------------------------------------------------------
+function varargout = tmpick(hObject, eventdata, handles)
+
+zoom off
+
+propstrct = get(get(hObject,'Parent'),'UserData');
+id = get(hObject,'UserData');
+
+% for i = 1:length(propstrct.h_tms)
+%     set(propstrct.h_tms(i),'Selected','off')
+% end
+% set(hObject,'Selected','on');
+
+for i = 1:length(propstrct.h_tms)
+    set(propstrct.h_tms(i),'Color','g','linewidth',1)
+end
+set(hObject,'Color','r','linewidth',2);
+
+dirstrct = get(handles.load_wav_dir,'UserData');
+dirstrct.wavind = find(dirstrct.daytms==dirstrct.daytms(propstrct.dayinds(id)));
+
+if length(dirstrct.wavind) > 1
+    dirstrct.wavind = dirstrct.wavind(1);
+end
+
+set(handles.load_wav_dir,'UserData',dirstrct);
+getwav(handles);
+plotwav(handles);
+
+set(handles.go_to,'String',num2str(dirstrct.wavind));
+
+
+
+% --- Executes on button press in zoom_mode.
+function zoom_mode_Callback(hObject, eventdata, handles)
+% hObject    handle to zoom_mode (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of zoom_mode
+
+if get(hObject,'Value')
+    htmp = zoom;
+    
+    set(htmp,'Enable','on')
+    linkaxes([handles.spectrogram,handles.match_axis,handles.feature],'x');
+    
+    setAllowAxesZoom(htmp,handles.daytime_axis,0);
+    setAllowAxesZoom(htmp,handles.day_axis,0);
+    
+else
+    zoom off
+end
